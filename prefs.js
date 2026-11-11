@@ -812,6 +812,14 @@ export default class BayIslandPreferences extends ExtensionPreferences {
         });
         this._bindCombo(settings, 'media-island-clock', MEDIA_CLOCK_POSITIONS, mediaClockRow, cleanups);
         hwGroup.add(mediaClockRow);
+
+        hwGroup.add(this._bindSwitch(
+            settings,
+            'enable-audio-accessory-alert',
+            'TWS, DAC and IEM Connection Pop-up',
+            'Show Dynamic Island notification banner when Bluetooth TWS, USB DACs, or 3.5mm headphones connect.'
+        ));
+
         page.add(hwGroup);
 
         const prodGroup = new Adw.PreferencesGroup({

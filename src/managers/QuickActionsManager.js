@@ -25,6 +25,89 @@ const RfkillProxy = Gio.DBusProxy.makeProxyWrapper(RFKILL_XML);
 const SESSION_BUS = 'org.gnome.SessionManager';
 const SESSION_PATH = '/org/gnome/SessionManager';
 
+function getDeviceDisplayName(dev) {
+    const desc = (dev.get_description?.() || '').trim();
+    const origin = (dev.get_origin?.() || '').trim();
+    const isGenericOrigin = !origin || /^(built-in|internal|system)\s*audio$/i.test(origin);
+    const isGenericDesc = !desc || /^(headset|headphones?|speakers?|output|analog output|digital output|line out(put)?)$/i.test(desc);
+
+    if (!isGenericOrigin && isGenericDesc)
+        return origin;
+    if (!isGenericDesc)
+        return desc;
+    if (!isGenericOrigin)
+        return origin;
+    return desc || 'Headphones';
+}
+
+function classifyAudioDevice(dev) {
+    const desc = (dev.get_description?.() || '').toLowerCase();
+    const origin = (dev.get_origin?.() || '').toLowerCase();
+    const port = (dev.get_port?.() || '').toLowerCase();
+    const iconName = (dev.get_icon_name?.() || '').toLowerCase();
+
+    // 1. TWS / Bluetooth
+    const isBluetooth = origin.includes('bluetooth') ||
+        port.includes('bluetooth') ||
+        iconName.includes('bluetooth') ||
+        iconName.includes('headset') ||
+        port.includes('headset') ||
+        /buds|airpods|freebuds|earfun|soundcore|tws|wireless/i.test(desc) ||
+        /buds|airpods|freebuds|earfun|soundcore|tws|wireless/i.test(origin);
+
+    if (isBluetooth) {
+        return {
+            type: 'tws',
+            body: 'TWS Connected • Bluetooth Audio',
+            icon: 'audio-headset-symbolic',
+            iconColor: '#38bdf8',
+        };
+    }
+
+    // 2. USB DAC / Hi-Fi Sound Card
+    const isDac = origin.includes('usb') ||
+        desc.includes('usb') ||
+        /dac|fiio|moondrop|hifiman|audioquest|creative|focusrite|shanling|topping|hiby|ibasso|soundcard|hi-res/i.test(desc) ||
+        /dac|fiio|moondrop|hifiman|audioquest|creative|focusrite|shanling|topping|hiby|ibasso|soundcard|hi-res/i.test(origin);
+
+    if (isDac) {
+        return {
+            type: 'dac',
+            body: 'DAC Connected • Hi-Res Audio',
+            icon: 'audio-card-symbolic',
+            iconColor: '#a78bfa',
+        };
+    }
+
+    // 3. IEM / Headphone Jack (3.5mm)
+    const isHeadphones = port.includes('headphone') ||
+        desc.includes('headphone') ||
+        desc.includes('earphone') ||
+        desc.includes('iem');
+
+    if (isHeadphones) {
+        return {
+            type: 'iem',
+            body: 'IEM Plugged • Audio Jack',
+            icon: 'audio-headphones-symbolic',
+            iconColor: '#60a5fa',
+        };
+    }
+
+    // Other non-speaker external audio
+    const isSpeaker = port.includes('speaker') || desc.includes('speaker');
+    if (!isSpeaker && !origin.includes('built-in')) {
+        return {
+            type: 'external',
+            body: 'Audio Device Connected',
+            icon: 'audio-headphones-symbolic',
+            iconColor: '#38bdf8',
+        };
+    }
+
+    return null;
+}
+
 /**
  * Non-destructive Quick Actions & Audio Output controller.
  * Communicates strictly over NM, GnomeBluetooth, Gvc, GSettings, and D-Bus
@@ -72,6 +155,12 @@ export class QuickActionsManager extends Signals.EventEmitter {
         this._outputs = new Map();
         this._activeOutputId = null;
 
+        // Audio accessory connection alerts (TWS, DAC, IEM)
+        this._accessoryAlertsEnabled = true;
+        this._bootstrapped = false;
+        this._knownOutputIds = new Set();
+        this._lastAlertTime = new Map();
+
         this._state = {
             wifiAvailable: false,
             wifiEnabled: false,
@@ -100,6 +189,10 @@ export class QuickActionsManager extends Signals.EventEmitter {
             this._start();
         else
             this._stop();
+    }
+
+    setAccessoryAlertsEnabled(enabled) {
+        this._accessoryAlertsEnabled = Boolean(enabled);
     }
 
     getSnapshot() {
@@ -470,12 +563,16 @@ export class QuickActionsManager extends Signals.EventEmitter {
                 this._mixer.connect('default-source-changed', () => this._bindDefaultSource()),
                 this._mixer.connect('output-added', (_c, id) => this._addOutputDevice(id)),
                 this._mixer.connect('output-removed', (_c, id) => this._removeOutputDevice(id)),
-                this._mixer.connect('active-output-update', (_c, id) => {
-                    this._activeOutputId = id;
-                    this._syncAudioDeviceList();
-                })
+                this._mixer.connect('active-output-update', (_c, id) => this._onActiveOutputUpdate(id))
             );
             this._rebuildAudioDevices();
+            if (this._timers) {
+                this._timers.setTimeout(() => {
+                    this._bootstrapped = true;
+                }, 1500);
+            } else {
+                this._bootstrapped = true;
+            }
         } catch {
             this._mixer = null;
         }
@@ -490,8 +587,11 @@ export class QuickActionsManager extends Signals.EventEmitter {
         const sinks = this._mixer.get_sinks?.() ?? [];
         for (const sink of sinks) {
             const uiDev = this._mixer.lookup_device_from_stream?.(sink);
-            if (uiDev)
-                this._outputs.set(uiDev.get_id(), uiDev);
+            if (uiDev) {
+                const id = uiDev.get_id();
+                this._outputs.set(id, uiDev);
+                this._knownOutputIds.add(id);
+            }
         }
         this._bindDefaultSink();
         this._bindDefaultSource();
@@ -504,13 +604,80 @@ export class QuickActionsManager extends Signals.EventEmitter {
             return;
         this._outputs.set(id, dev);
         this._syncAudioDeviceList();
+
+        if (this._bootstrapped && !this._knownOutputIds.has(id)) {
+            this._knownOutputIds.add(id);
+            this._checkAndNotifyAccessory(dev);
+        } else {
+            this._knownOutputIds.add(id);
+        }
     }
 
     _removeOutputDevice(id) {
         this._outputs.delete(id);
+        this._knownOutputIds.delete(id);
+        this._lastAlertTime.delete(id);
         if (this._activeOutputId === id)
             this._activeOutputId = null;
         this._syncAudioDeviceList();
+    }
+
+    _onActiveOutputUpdate(id) {
+        const prevId = this._activeOutputId;
+        this._activeOutputId = id;
+        this._syncAudioDeviceList();
+
+        if (prevId && prevId !== id)
+            this._lastAlertTime.delete(prevId);
+
+        if (this._bootstrapped && id !== prevId) {
+            const dev = this._mixer?.lookup_output_id(id);
+            if (dev)
+                this._checkAndNotifyAccessory(dev);
+        }
+    }
+
+    _checkAndNotifyAccessory(dev) {
+        if (!this._accessoryAlertsEnabled || !this._bootstrapped || !dev || !this._priority)
+            return;
+
+        const id = dev.get_id?.();
+        if (id === null || id === undefined)
+            return;
+
+        const classification = classifyAudioDevice(dev);
+        if (!classification)
+            return;
+
+        const now = GLib.get_monotonic_time();
+        const last = this._lastAlertTime.get(id) || 0;
+        // 4 seconds cooldown per device ID
+        if ((now - last) < 4000000)
+            return;
+        this._lastAlertTime.set(id, now);
+
+        const displayName = getDeviceDisplayName(dev);
+        const title = (classification.type === 'iem' && (displayName === 'Headphones' || displayName === 'Headphones (Built-in Audio)'))
+            ? 'Headphones Connected'
+            : displayName;
+
+        this._priority.pushTransient({
+            kind: 'accessory',
+            weight: Weights.ACCESSORY,
+            coalesceKey: `accessory-${id}`,
+            title,
+            body: classification.body,
+            icon: new Gio.ThemedIcon({ name: classification.icon }),
+            iconName: classification.icon,
+            iconColor: classification.iconColor,
+            durationMs: 3600,
+            onActivate: () => {
+                this._priority.expand('media');
+            },
+            onClick: () => {
+                this._priority.expand('media');
+            },
+        });
     }
 
     _bindDefaultSink() {
@@ -660,6 +827,9 @@ export class QuickActionsManager extends Signals.EventEmitter {
         }
         this._mixerIds = [];
         this._outputs.clear();
+        this._bootstrapped = false;
+        this._knownOutputIds.clear();
+        this._lastAlertTime.clear();
         this._mixer = null;
     }
 

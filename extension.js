@@ -358,6 +358,7 @@ export default class BayIslandExtension extends Extension {
         this._resource.setEnabled(s.get_boolean('enable-resource-spike'));
 
         this._quickActions.setEnabled(s.get_boolean('enable-quick-actions'));
+        this._quickActions.setAccessoryAlertsEnabled(s.get_boolean('enable-audio-accessory-alert'));
 
         this._clipboard.setOptions({
             autoPaste: s.get_boolean('clipboard-auto-paste'),

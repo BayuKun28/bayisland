@@ -56,6 +56,7 @@ export const Weights = {
     TIMER: 40,
     PRIVACY: 45,
     POWER: 55,
+    ACCESSORY: 58,
     RESOURCE: 60,
     TASK: 65,
     NOTIFICATION: 75,

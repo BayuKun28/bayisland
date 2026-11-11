@@ -126,6 +126,12 @@
       <description>Seconds to keep paused media visible before collapsing (0 disables auto-collapse while paused).</description>
     </key>
 
+    <key name="enable-audio-accessory-alert" type="b">
+      <default>true</default>
+      <summary>Enable Audio Device Connection Alert</summary>
+      <description>Show Dynamic Island banner when TWS, Bluetooth headsets, IEMs, or USB DACs connect.</description>
+    </key>
+
     <key name="enable-privacy" type="b">
       <default>true</default>
       <summary>Enable Privacy Indicators</summary>
