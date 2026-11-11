@@ -77,6 +77,32 @@ function isSameLocalDay(a, b) {
         a.getDate() === b.getDate();
 }
 
+function cleanCardText(raw, maxChars) {
+    if (!raw || typeof raw !== 'string')
+        return '';
+    const normalized = raw
+        .replace(/\r\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    if (!normalized)
+        return '';
+    if (normalized.length <= maxChars)
+        return normalized;
+    return `${normalized.slice(0, maxChars - 1).trimEnd()}…`;
+}
+
+function isRasterAvatarIcon(gicon) {
+    if (!gicon)
+        return false;
+    if (gicon instanceof Gio.FileIcon || gicon instanceof Gio.BytesIcon)
+        return true;
+    if (gicon instanceof Gio.ThemedIcon) {
+        const names = gicon.get_names?.() ?? [];
+        return names.length > 0 && names.every(n => !n.endsWith('-symbolic'));
+    }
+    return false;
+}
+
 export class HomeTab {
     constructor({ callbacks, timers }) {
         this._cb = callbacks;
@@ -183,30 +209,45 @@ export class HomeTab {
                 vertical: true,
                 x_expand: true,
             });
-            if (!this._calendar) {
-                this._calendar = new Calendar.Calendar();
+            if (!this._eventSource) {
                 this._eventSource = new Calendar.DBusEventSource();
-                this._calendar.setEventSource(this._eventSource);
-                this._calDateSigId = this._calendar.connect('selected-date-changed', (_c, datetime) => {
-                    this._selectedDate = new Date(datetime.to_unix() * 1000);
-                    this._refreshAgenda();
-                    this._scheduleCalendarStyle();
-                });
-                this._calScrollSigId = this._calendar.connect('scroll-event', () => {
-                    this._scheduleCalendarStyle();
-                    return Clutter.EVENT_PROPAGATE;
-                });
                 this._calEvSigId = this._eventSource.connect('changed', () => {
                     this._refreshAgenda();
                     this._scheduleCalendarStyle();
                 });
-            } else {
-                this._calendar.get_parent()?.remove_child(this._calendar);
+            }
+            const cal = new Calendar.Calendar();
+            this._calendar = cal;
+            this._calendar.setEventSource(this._eventSource);
+            cal.connect('destroy', () => {
+                if (this._calendar === cal) {
+                    this._calendar = null;
+                    this._calDateSigId = 0;
+                    this._calScrollSigId = 0;
+                }
+            });
+            this._calDateSigId = this._calendar.connect('selected-date-changed', (_c, datetime) => {
+                this._selectedDate = new Date(datetime.to_unix() * 1000);
+                this._refreshAgenda();
+                this._scheduleCalendarStyle();
+            });
+            this._calScrollSigId = this._calendar.connect('scroll-event', () => {
+                this._scheduleCalendarStyle();
+                return Clutter.EVENT_PROPAGATE;
+            });
+            if (this._selectedDate && !isSameLocalDay(this._selectedDate, new Date())) {
+                try {
+                    const unixSec = Math.floor(this._selectedDate.getTime() / 1000);
+                    const gdt = GLib.DateTime.new_from_unix_local(unixSec);
+                    if (gdt)
+                        this._calendar.setDate(gdt, false);
+                } catch {
+                    // Best effort selected date restore
+                }
             }
             calWrap.add_child(this._calendar);
             heroRow.add_child(calWrap);
             this._styleCalendar();
-            this._scheduleCalendarStyle();
         } catch (e) {
             heroRow.add_child(new St.Label({
                 text: `Calendar unavailable: ${e.message}`,
@@ -751,76 +792,126 @@ export class HomeTab {
     }
 
     _buildNotifCard(n) {
+        const cleanTitle = cleanCardText(n.title || 'Notification', 96) || 'Notification';
+        const cleanBody = cleanCardText(n.body || '', 220);
+        const cleanSource = cleanCardText(n.sourceTitle || '', 38);
+
         const card = new St.BoxLayout({
             style_class: `bayisland-notif-card${n.urgent ? ' bayisland-notif-card-urgent' : ''}`,
             vertical: true,
             x_expand: true,
-            style: 'spacing: 5px;',
+            style: 'spacing: 4px;',
         });
 
-        const topRow = new St.BoxLayout({ x_expand: true, style: 'spacing: 8px;' });
-
-        const mainBtn = new St.Button({
-            style_class: 'bayisland-row-main-btn',
-            reactive: true,
-            can_focus: false,
+        // 1. Compact single-line app/avatar/time bar + close button
+        const topRow = new St.BoxLayout({
             x_expand: true,
+            style: 'spacing: 6px;',
+            y_align: Clutter.ActorAlign.CENTER,
         });
-        const inner = new St.BoxLayout({ style: 'spacing: 8px;', x_expand: true });
-        inner.add_child(new St.Icon({
-            ...(n.icon instanceof Gio.Icon
-                ? { gicon: n.icon }
-                : { icon_name: 'preferences-system-notifications-symbolic' }),
-            icon_size: 15,
-            y_align: Clutter.ActorAlign.START,
-        }));
 
-        const textCol = new St.BoxLayout({
-            vertical: true,
-            x_expand: true,
-            style: 'spacing: 1px;',
-        });
-        const headLine = new St.BoxLayout({ x_expand: true, style: 'spacing: 6px;' });
-        const titleLbl = new St.Label({
-            text: n.title || 'Notification',
-            style_class: 'bayisland-list-title',
-            x_expand: true,
-        });
-        titleLbl.clutter_text.ellipsize = Pango.EllipsizeMode.END;
-        headLine.add_child(titleLbl);
-        headLine.add_child(new St.Label({
-            text: formatRelativeTime(n.timestampMs),
-            style_class: 'bayisland-muted-xs',
-        }));
-        textCol.add_child(headLine);
-
-        if (n.body) {
-            const bodyLbl = new St.Label({
-                text: n.body,
-                style_class: 'bayisland-muted-xs',
+        const isAvatar = isRasterAvatarIcon(n.icon);
+        if (isAvatar) {
+            const avatarWrap = new St.Bin({
+                style_class: 'bayisland-notif-avatar-wrap',
+                clip_to_allocation: true,
+                y_align: Clutter.ActorAlign.CENTER,
+                child: new St.Icon({
+                    gicon: n.icon,
+                    icon_size: 20,
+                }),
             });
-            bodyLbl.clutter_text.ellipsize = Pango.EllipsizeMode.END;
-            textCol.add_child(bodyLbl);
+            topRow.add_child(avatarWrap);
+        } else {
+            topRow.add_child(new St.Icon({
+                ...(n.icon instanceof Gio.Icon
+                    ? { gicon: n.icon }
+                    : { icon_name: 'preferences-system-notifications-symbolic' }),
+                icon_size: 15,
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
         }
 
-        inner.add_child(textCol);
-        mainBtn.set_child(inner);
-        mainBtn.connect('clicked', () => this._cb.onNotifActivate?.(n.id));
-        topRow.add_child(mainBtn);
+        const sourceLbl = new St.Label({
+            text: cleanSource || 'Notification',
+            style_class: 'bayisland-notif-source',
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        sourceLbl.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+        topRow.add_child(sourceLbl);
+
+        topRow.add_child(new St.Label({
+            text: formatRelativeTime(n.timestampMs),
+            style_class: 'bayisland-muted-xs',
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
 
         const closeBtn = new St.Button({
             style_class: 'bayisland-icon-btn bayisland-icon-btn-del',
             reactive: true,
             can_focus: false,
-            y_align: Clutter.ActorAlign.START,
-            child: new St.Icon({ icon_name: 'window-close-symbolic', icon_size: 12 }),
+            y_align: Clutter.ActorAlign.CENTER,
+            child: new St.Icon({ icon_name: 'window-close-symbolic', icon_size: 11 }),
         });
         closeBtn.connect('clicked', () => this._cb.onNotifDismiss?.(n.id));
         topRow.add_child(closeBtn);
         card.add_child(topRow);
 
+        // 2. Full-width multi-line wrapped sender/title + body directly inside vertical card
+        const contentCol = new St.BoxLayout({
+            vertical: true,
+            x_expand: true,
+            style: 'spacing: 2px;',
+        });
+
+        const titleLbl = new St.Label({
+            text: cleanTitle,
+            style_class: 'bayisland-list-title',
+            x_expand: true,
+            x_align: Clutter.ActorAlign.FILL,
+        });
+        titleLbl.clutter_text.line_wrap = true;
+        titleLbl.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
+        titleLbl.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+        contentCol.add_child(titleLbl);
+
+        if (cleanBody) {
+            const bodyLbl = new St.Label({
+                text: cleanBody,
+                style_class: 'bayisland-notif-body',
+                x_expand: true,
+                x_align: Clutter.ActorAlign.FILL,
+            });
+            bodyLbl.clutter_text.line_wrap = true;
+            bodyLbl.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
+            bodyLbl.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+            contentCol.add_child(bodyLbl);
+        }
+
+        const contentBtn = new St.Button({
+            style_class: 'bayisland-notif-body-btn',
+            reactive: true,
+            can_focus: false,
+            x_expand: true,
+            x_align: Clutter.ActorAlign.FILL,
+            child: contentCol,
+        });
+        contentBtn.connect('clicked', () => this._cb.onNotifActivate?.(n.id));
+        card.add_child(contentBtn);
+
+        // 3. Stage-safe wrapped action pills
         if (n.actions?.length > 0) {
-            const actRow = new St.BoxLayout({ style: 'spacing: 5px; margin-left: 23px;' });
+            const actionsWrap = new St.BoxLayout({
+                vertical: true,
+                x_expand: true,
+                style: 'spacing: 4px; margin-top: 2px;',
+            });
+
+            let actRow = new St.BoxLayout({ style: 'spacing: 5px;' });
+            let usedW = 0;
+            const maxRowW = 212;
+
             for (const act of n.actions) {
                 const aBtn = new St.Button({
                     label: act.label,
@@ -829,9 +920,21 @@ export class HomeTab {
                     can_focus: false,
                 });
                 aBtn.connect('clicked', () => this._cb.onNotifAction?.(n.id, act.index));
+                const estW = Math.ceil((act.label?.length || 4) * 7.2 + 24);
+
+                if (usedW > 0 && (usedW + 5 + estW) > maxRowW) {
+                    actionsWrap.add_child(actRow);
+                    actRow = new St.BoxLayout({ style: 'spacing: 5px;' });
+                    usedW = estW;
+                } else {
+                    usedW = usedW === 0 ? estW : (usedW + 5 + estW);
+                }
                 actRow.add_child(aBtn);
             }
-            card.add_child(actRow);
+            if (actRow.get_n_children() > 0)
+                actionsWrap.add_child(actRow);
+
+            card.add_child(actionsWrap);
         }
 
         return card;
@@ -943,10 +1046,18 @@ export class HomeTab {
             this._timers?.clear(this._calStyleTimerId);
             this._calStyleTimerId = 0;
         }
-        try {
-            this._calendar?.get_parent()?.remove_child(this._calendar);
-        } catch {
-            // Best effort detach
+        if (this._calendar) {
+            const cal = this._calendar;
+            this._calendar = null;
+            if (this._calDateSigId) {
+                try { cal.disconnect(this._calDateSigId); } catch {}
+                this._calDateSigId = 0;
+            }
+            if (this._calScrollSigId) {
+                try { cal.disconnect(this._calScrollSigId); } catch {}
+                this._calScrollSigId = 0;
+            }
+            try { cal.destroy(); } catch {}
         }
         this._weekdayLabel = null;
         this._dayLabel = null;

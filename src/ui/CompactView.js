@@ -76,6 +76,11 @@ export class CompactView {
         this._root = null;
         this._currentPrimary = null;
 
+        this._idleTopPad = 4;
+        this._idleHitHeight = 18;
+        this._idleAlignStart = false;
+        this._edgeFlush = false;
+
         this._titleLabel = null;
         this._timerLabel = null;
         this._eqBars = [];
@@ -178,17 +183,44 @@ export class CompactView {
         return false;
     }
 
+    setIdleHitbox({ topPad = 4, hitHeight = 18, alignStart = false, edgeFlush = false } = {}) {
+        const nextPad = Math.max(0, Math.round(topPad));
+        const nextH = Math.max(16, Math.round(hitHeight));
+        const nextAlign = Boolean(alignStart);
+        const nextFlush = Boolean(edgeFlush);
+        const changed =
+            nextPad !== this._idleTopPad ||
+            nextH !== this._idleHitHeight ||
+            nextAlign !== this._idleAlignStart ||
+            nextFlush !== this._edgeFlush;
+
+        this._idleTopPad = nextPad;
+        this._idleHitHeight = nextH;
+        this._idleAlignStart = nextAlign;
+        this._edgeFlush = nextFlush;
+
+        if (changed && this._root && this._currentPrimary === 'idle-bar') {
+            this._root.style = this._idleAlignStart
+                ? `padding: ${this._idleTopPad}px 8px 4px 8px;`
+                : null;
+            this._root.y_align = this._idleAlignStart
+                ? Clutter.ActorAlign.START
+                : Clutter.ActorAlign.CENTER;
+        }
+    }
+
     getEqBars() {
         return this._eqBars;
     }
 
     getPreferredSize(model) {
         if (model.state === IslandState.IDLE_BAR)
-            return { width: 160, height: 18 };
+            return { width: 172, height: this._idleHitHeight };
         if (model.state === IslandState.HOVER_PEEK) {
             const unread = model.meta?.unreadNotifs ?? 0;
             const dnd = Boolean(model.meta?.dnd);
-            return { width: unread > 0 ? 270 : (dnd ? 250 : 236), height: 36 };
+            const h = this._edgeFlush ? (36 + this._idleTopPad) : 36;
+            return { width: unread > 0 ? 270 : (dnd ? 250 : 236), height: h };
         }
         if (model.state === IslandState.DROP_CATCH)
             return { width: 320, height: 68 };
@@ -203,6 +235,23 @@ export class CompactView {
         if (model.primary === 'timer')
             return { width: 142, height: 36 };
         return { width: 224, height: 36 };
+    }
+
+    _attachRoot(root) {
+        this._root = root;
+        root.connect('destroy', () => {
+            if (this._root === root) {
+                this._root = null;
+                this._currentPrimary = null;
+                this._resetRefs();
+            }
+        });
+        return root;
+    }
+
+    stripEdgePadding() {
+        if (this._root && this._currentPrimary === 'peek' && this._edgeFlush)
+            this._root.style = 'padding: 0px;';
     }
 
     _resetRefs() {
@@ -231,9 +280,10 @@ export class CompactView {
         const wrap = new St.BoxLayout({
             style_class: 'bayisland-idle-handle-wrap',
             x_align: Clutter.ActorAlign.CENTER,
-            y_align: Clutter.ActorAlign.CENTER,
+            y_align: this._idleAlignStart ? Clutter.ActorAlign.START : Clutter.ActorAlign.CENTER,
             x_expand: true,
             y_expand: true,
+            ...(this._idleAlignStart ? { style: `padding: ${this._idleTopPad}px 8px 4px 8px;` } : {}),
         });
 
         const hasNotifs = (model.meta?.unreadNotifs ?? 0) > 0;
@@ -251,8 +301,7 @@ export class CompactView {
         });
         wrap.add_child(this._idleUnreadDot);
 
-        this._root = wrap;
-        return wrap;
+        return this._attachRoot(wrap);
     }
 
     _renderHoverPeek(model, palette) {
@@ -262,9 +311,13 @@ export class CompactView {
         const meta = model.meta ?? {};
 
         const box = new St.BoxLayout({
-            style_class: 'bayisland-peek-box',
+            style_class: this._edgeFlush ? 'bayisland-peek-box bayisland-peek-pill' : 'bayisland-peek-box',
+            ...(this._edgeFlush && palette?.pillBgCss
+                ? { style: `background-color: ${palette.pillBgCss};` }
+                : {}),
             x_expand: true,
-            y_expand: true,
+            y_expand: !this._edgeFlush,
+            height: 36,
             y_align: Clutter.ActorAlign.CENTER,
         });
 
@@ -362,8 +415,20 @@ export class CompactView {
         }));
         box.add_child(rightGroup);
 
-        this._root = box;
-        return box;
+        if (this._edgeFlush) {
+            const edgeWrap = new St.Bin({
+                style_class: 'bayisland-peek-edge-wrap',
+                style: `padding: ${this._idleTopPad}px 0px 0px 0px;`,
+                x_expand: true,
+                y_expand: true,
+                x_align: Clutter.ActorAlign.FILL,
+                y_align: Clutter.ActorAlign.START,
+                child: box,
+            });
+            return this._attachRoot(edgeWrap);
+        }
+
+        return this._attachRoot(box);
     }
 
     _renderDropCatch(model, palette) {
@@ -410,8 +475,7 @@ export class CompactView {
         col.add_child(this._dropSubLabel);
         box.add_child(col);
 
-        this._root = box;
-        return box;
+        return this._attachRoot(box);
     }
 
     _renderIdle() {
@@ -428,8 +492,7 @@ export class CompactView {
             style_class: 'bayisland-idle-dot',
             y_align: Clutter.ActorAlign.CENTER,
         }));
-        this._root = box;
-        return box;
+        return this._attachRoot(box);
     }
 
     _renderPrivacy(privacy) {
@@ -468,8 +531,7 @@ export class CompactView {
             y_align: Clutter.ActorAlign.CENTER,
         }));
 
-        this._root = box;
-        return box;
+        return this._attachRoot(box);
     }
 
     _renderTimer(timer) {
@@ -505,8 +567,7 @@ export class CompactView {
         });
         box.add_child(stateLabel);
 
-        this._root = box;
-        return box;
+        return this._attachRoot(box);
     }
 
     _renderMedia(media, palette) {
@@ -546,7 +607,6 @@ export class CompactView {
         this._eqBars = bars;
         box.add_child(eqBox);
 
-        this._root = box;
-        return box;
+        return this._attachRoot(box);
     }
 }

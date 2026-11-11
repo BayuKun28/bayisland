@@ -140,6 +140,7 @@ export class ExternalBusService {
 
     GetState() {
         const model = this._priority.getModel();
+        const geom = this._priority.getDebugInfo?.() ?? {};
         return JSON.stringify({
             state: model.state,
             primary: model.primary ?? null,
@@ -152,6 +153,7 @@ export class ExternalBusService {
             privacy: model.persistent?.privacy ?? {},
             meta: model.meta ?? {},
             compat: this._compat.getSnapshot(),
+            ...geom,
         });
     }
 

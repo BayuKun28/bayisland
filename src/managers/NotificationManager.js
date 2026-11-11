@@ -87,7 +87,7 @@ export class NotificationManager extends Signals.EventEmitter {
                 id: rec.id,
                 kind: 'notification',
                 title: n.title || n.source?.title || 'Notification',
-                body: n.bannerBodyText || n.body || '',
+                body: n.body || n.bannerBodyText || '',
                 sourceTitle: n.source?.title || '',
                 icon: n.gicon ?? n.source?.icon ?? null,
                 urgent: n.urgency === MessageTray.Urgency.CRITICAL,
@@ -280,15 +280,22 @@ export class NotificationManager extends Signals.EventEmitter {
 
         const isCritical = notification.urgency === MessageTray.Urgency.CRITICAL;
         const icon = notification.gicon ?? notification.source?.icon ?? null;
+        const title = notification.title || notification.source?.title || 'Notification';
+        const body = notification.body || notification.bannerBodyText || '';
+        const sourceTitle = notification.source?.title || '';
+        const readWindowMs = body.length > 100
+            ? Math.max(5200, this._durationMs)
+            : this._durationMs;
         const transientId = this._priority.pushTransient({
             kind: 'notification',
             weight: isCritical ? Weights.ALARM : Weights.NOTIFICATION,
-            title: notification.title || notification.source?.title || 'Notification',
-            body: notification.bannerBodyText || notification.body || '',
+            title,
+            body,
+            sourceTitle,
             icon,
             iconName: icon ? undefined : 'preferences-system-notifications-symbolic',
             alertStyle: isCritical ? 'critical' : undefined,
-            durationMs: isCritical ? Math.max(6000, this._durationMs) : this._durationMs,
+            durationMs: isCritical ? Math.max(6000, readWindowMs) : readWindowMs,
             actions,
             onActivate: () => {
                 try {

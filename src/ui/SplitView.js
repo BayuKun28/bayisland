@@ -160,6 +160,14 @@ export class SplitView {
         root.add_child(rightBtn);
 
         this._root = root;
+        root.connect('destroy', () => {
+            if (this._root === root) {
+                this._root = null;
+                this._timerLabel = null;
+                this._mediaLabel = null;
+                this._eqBars = [];
+            }
+        });
         return root;
     }
 

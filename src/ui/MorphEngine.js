@@ -19,13 +19,45 @@ export class MorphEngine {
         this._lastX = 0;
         this._lastY = 0;
         this._visible = false;
+        this._collapsing = false;
+        this._destroyed = false;
         this._morphSeq = 0;
         this._pendingSettledCb = null;
         this._pendingSettledSeq = 0;
+
+        this._shellDestroyId = this._shell.connect('destroy', () => {
+            this._onActorsDestroyed();
+        });
+        this._binDestroyId = this._contentBin.connect('destroy', () => {
+            this._contentBin = null;
+            this._binDestroyId = 0;
+        });
+    }
+
+    _onActorsDestroyed() {
+        this._shellDestroyId = 0;
+        this._binDestroyId = 0;
+        this._destroyed = true;
+        this._visible = false;
+        this._collapsing = false;
+        this._morphSeq++;
+        this._pendingSettledCb = null;
+        this._stopEqLoop();
+        this._eqBars = [];
+        this._shell = null;
+        this._contentBin = null;
+    }
+
+    isVisible() {
+        return this._visible && !this._destroyed;
+    }
+
+    isCollapsing() {
+        return this._collapsing && !this._destroyed;
     }
 
     _flushPendingSettled(seq) {
-        if (!this._pendingSettledCb || seq !== this._pendingSettledSeq || seq !== this._morphSeq)
+        if (this._destroyed || !this._shell || !this._pendingSettledCb || seq !== this._pendingSettledSeq || seq !== this._morphSeq)
             return;
         if (this._shell.get_transition('width') ||
             this._shell.get_transition('height') ||
@@ -40,6 +72,10 @@ export class MorphEngine {
     }
 
     registerEqBars(bars) {
+        if (this._destroyed) {
+            this._eqBars = [];
+            return;
+        }
         this._eqBars = Array.isArray(bars) ? bars : [];
         for (const bar of this._eqBars)
             bar.set_pivot_point(0.5, 1.0);
@@ -48,6 +84,8 @@ export class MorphEngine {
     }
 
     setEqualizerPlaying(playing) {
+        if (this._destroyed)
+            return;
         const next = Boolean(playing);
         if (this._eqActive === next)
             return;
@@ -58,33 +96,45 @@ export class MorphEngine {
         } else {
             this._stopEqLoop();
             for (const bar of this._eqBars) {
-                bar.remove_all_transitions();
-                bar.ease({
-                    scale_y: 0.28,
-                    duration: 160,
-                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                });
+                try {
+                    if (!bar.get_stage?.())
+                        continue;
+                    bar.remove_all_transitions();
+                    bar.ease({
+                        scale_y: 0.28,
+                        duration: 160,
+                        mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                    });
+                } catch {
+                    // Bar already disposed
+                }
             }
         }
     }
 
     _startEqLoop() {
         this._stopEqLoop();
-        if (this._eqBars.length === 0)
+        if (this._destroyed || this._eqBars.length === 0)
             return;
 
         const tick = () => {
-            if (!this._eqActive || !this._visible)
+            if (this._destroyed || !this._eqActive || !this._visible)
                 return false;
 
             this._eqBars.forEach((bar, idx) => {
-                const base = idx % 2 === 0 ? 0.35 : 0.45;
-                const amp = base + Math.random() * (1.0 - base);
-                bar.ease({
-                    scale_y: amp,
-                    duration: 160,
-                    mode: Clutter.AnimationMode.EASE_IN_OUT_SINE,
-                });
+                try {
+                    if (!bar.get_stage?.())
+                        return;
+                    const base = idx % 2 === 0 ? 0.35 : 0.45;
+                    const amp = base + Math.random() * (1.0 - base);
+                    bar.ease({
+                        scale_y: amp,
+                        duration: 160,
+                        mode: Clutter.AnimationMode.EASE_IN_OUT_SINE,
+                    });
+                } catch {
+                    // Bar already disposed
+                }
             });
             return true;
         };
@@ -100,8 +150,23 @@ export class MorphEngine {
         }
     }
 
-    morphTo({ x, y, width, height, visible, isExpanding, inPlaceOnly, onHidden, onSettled }) {
+    morphTo({
+        x,
+        y,
+        width,
+        height,
+        visible,
+        isExpanding,
+        inPlaceOnly,
+        fadeDelayMs = 0,
+        fadeDurationMs = 150,
+        onHidden,
+        onSettled,
+    }) {
+        if (this._destroyed || !this._shell || !this._contentBin)
+            return;
         const seq = ++this._morphSeq;
+        this._collapsing = false;
 
         if (!visible) {
             this._pendingSettledCb = null;
@@ -115,13 +180,14 @@ export class MorphEngine {
             this._visible = false;
             this._stopEqLoop();
             this._shell.remove_all_transitions();
+            this._contentBin.remove_all_transitions();
             this._shell.ease({
                 opacity: 0,
                 y: Math.max(0, y - 6),
-                duration: 190,
+                duration: 180,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
                 onComplete: () => {
-                    if (!this._visible && seq === this._morphSeq) {
+                    if (!this._destroyed && this._shell && !this._visible && seq === this._morphSeq) {
                         this._shell.hide();
                         this._lastWidth = 0;
                         this._lastHeight = 0;
@@ -132,17 +198,18 @@ export class MorphEngine {
             return;
         }
 
-        const wasHidden = !this._visible;
+        const wasHidden = !this._visible || !this._shell.visible;
         this._visible = true;
         this._pendingSettledCb = onSettled || null;
         this._pendingSettledSeq = seq;
-        const isLargeTarget = width >= 380 || height >= 120;
+        const isLargeTarget = width >= 360 || height >= 90;
+        const isCompactHandle = height <= 24 && width <= 190;
 
         if (wasHidden) {
             const startW = Math.max(48, Math.round(width * 0.65));
             const startH = Math.max(10, Math.round(height * 0.72));
             const startX = Math.round(x + (width - startW) / 2);
-            const startY = Math.max(0, y - 3);
+            const startY = Math.max(0, y - 2);
 
             this._shell.remove_all_transitions();
             this._shell.set_position(startX, startY);
@@ -150,7 +217,17 @@ export class MorphEngine {
             this._shell.opacity = 0;
             this._shell.show();
             this._contentBin.remove_all_transitions();
-            this._contentBin.opacity = 255;
+            if (isLargeTarget) {
+                this._contentBin.opacity = 0;
+                this._contentBin.ease({
+                    opacity: 255,
+                    delay: Math.max(30, fadeDelayMs),
+                    duration: Math.max(120, fadeDurationMs),
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                });
+            } else {
+                this._contentBin.opacity = 255;
+            }
 
             this._shell.ease({
                 opacity: 255,
@@ -158,8 +235,8 @@ export class MorphEngine {
                 height,
                 x,
                 y,
-                duration: isLargeTarget ? 280 : 250,
-                mode: isLargeTarget
+                duration: isLargeTarget ? 260 : 220,
+                mode: (isLargeTarget || isCompactHandle)
                     ? Clutter.AnimationMode.EASE_OUT_CUBIC
                     : Clutter.AnimationMode.EASE_OUT_BACK,
                 onComplete: () => {
@@ -188,7 +265,7 @@ export class MorphEngine {
                     : { x, y, opacity: 255 };
                 this._shell.ease({
                     ...easeTarget,
-                    duration: isLargeTarget ? 280 : (isExpanding ? 260 : 220),
+                    duration: isExpanding ? 245 : (isLargeTarget ? 195 : 190),
                     mode: isExpanding || isLargeTarget
                         ? Clutter.AnimationMode.EASE_OUT_CUBIC
                         : Clutter.AnimationMode.EASE_OUT_QUAD,
@@ -214,9 +291,12 @@ export class MorphEngine {
                 this._contentBin.opacity = 0;
                 this._contentBin.ease({
                     opacity: 255,
-                    duration: 150,
+                    delay: Math.max(0, fadeDelayMs),
+                    duration: Math.max(100, fadeDurationMs),
                     mode: Clutter.AnimationMode.EASE_OUT_QUAD,
                 });
+            } else if (!this._contentBin.get_transition('opacity') && this._contentBin.opacity < 255) {
+                this._contentBin.opacity = 255;
             }
 
             if (this._eqActive && !this._eqTimerId)
@@ -229,8 +309,91 @@ export class MorphEngine {
         this._lastHeight = height;
     }
 
+    collapseToIdleBar({ shrinkRect, targetRect, onMidSwap, onComplete }) {
+        if (this._destroyed || !this._shell || !this._contentBin)
+            return;
+        const seq = ++this._morphSeq;
+        this._pendingSettledCb = null;
+        this._stopEqLoop();
+
+        if (!this._visible || !this._shell.visible) {
+            this._collapsing = false;
+            this._visible = true;
+            onMidSwap?.();
+            if (this._destroyed || !this._shell || !this._contentBin)
+                return;
+            this._shell.set_position(targetRect.x, targetRect.y);
+            this._shell.set_size(targetRect.width, targetRect.height);
+            this._shell.opacity = 255;
+            this._shell.show();
+            this._contentBin.remove_all_transitions();
+            this._contentBin.opacity = 255;
+            this._lastX = targetRect.x;
+            this._lastY = targetRect.y;
+            this._lastWidth = targetRect.width;
+            this._lastHeight = targetRect.height;
+            onComplete?.();
+            return;
+        }
+
+        this._visible = true;
+        this._collapsing = true;
+        this._lastX = shrinkRect.x;
+        this._lastY = shrinkRect.y;
+        this._lastWidth = shrinkRect.width;
+        this._lastHeight = shrinkRect.height;
+
+        this._contentBin.remove_all_transitions();
+        this._contentBin.ease({
+            opacity: 0,
+            duration: 95,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+        });
+
+        this._shell.remove_all_transitions();
+        this._shell.ease({
+            x: shrinkRect.x,
+            y: shrinkRect.y,
+            width: shrinkRect.width,
+            height: shrinkRect.height,
+            opacity: 255,
+            duration: 145,
+            mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+            onComplete: () => {
+                if (this._destroyed || !this._shell || !this._contentBin || seq !== this._morphSeq || !this._visible) {
+                    this._collapsing = false;
+                    return;
+                }
+
+                this._collapsing = false;
+                onMidSwap?.();
+                if (this._destroyed || !this._shell || !this._contentBin)
+                    return;
+
+                this._shell.set_position(targetRect.x, targetRect.y);
+                this._shell.set_size(targetRect.width, targetRect.height);
+                this._lastX = targetRect.x;
+                this._lastY = targetRect.y;
+                this._lastWidth = targetRect.width;
+                this._lastHeight = targetRect.height;
+
+                this._contentBin.remove_all_transitions();
+                this._contentBin.opacity = 0;
+                this._contentBin.ease({
+                    opacity: 255,
+                    duration: 120,
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                    onComplete: () => {
+                        if (!this._destroyed && this._shell && seq === this._morphSeq && this._visible)
+                            onComplete?.();
+                    },
+                });
+            },
+        });
+    }
+
     snapPosition({ x, y }) {
-        if (!this._visible)
+        if (this._destroyed || !this._shell || !this._contentBin || !this._visible)
             return;
 
         if (!this._shell.get_transition('opacity') && this._shell.opacity < 255)
@@ -250,7 +413,7 @@ export class MorphEngine {
     }
 
     glidePosition({ x, y }) {
-        if (!this._visible)
+        if (this._destroyed || !this._shell || !this._contentBin || !this._visible)
             return;
 
         if (!this._shell.get_transition('opacity') && this._shell.opacity < 255)
@@ -274,8 +437,27 @@ export class MorphEngine {
     }
 
     destroy() {
+        this._destroyed = true;
+        this._visible = false;
+        this._morphSeq++;
+        this._collapsing = false;
         this._pendingSettledCb = null;
         this._stopEqLoop();
         this._eqBars = [];
+
+        if (this._shellDestroyId && this._shell) {
+            try { this._shell.disconnect(this._shellDestroyId); } catch {}
+        }
+        this._shellDestroyId = 0;
+
+        if (this._binDestroyId && this._contentBin) {
+            try { this._contentBin.disconnect(this._binDestroyId); } catch {}
+        }
+        this._binDestroyId = 0;
+
+        try { this._shell?.remove_all_transitions?.(); } catch {}
+        try { this._contentBin?.remove_all_transitions?.(); } catch {}
+        this._shell = null;
+        this._contentBin = null;
     }
 }

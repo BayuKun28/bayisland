@@ -270,6 +270,18 @@ export class ExpandedView {
         root.add_child(this._bodyBin);
 
         this._root = root;
+        root.connect('destroy', () => {
+            if (this._root === root) {
+                this._root = null;
+                this._bodyBin = null;
+                this._stripClockLabel = null;
+                this._lowBatBtn = null;
+                this._incogBadge = null;
+                this._tabButtons = {};
+                this._tabBadges = {};
+                this._currentTabId = null;
+            }
+        });
         return root;
     }
 

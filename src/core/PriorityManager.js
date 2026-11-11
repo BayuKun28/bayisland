@@ -146,8 +146,22 @@ export class PriorityManager extends Signals.EventEmitter {
             panelVisible: false,
             inFullscreen: false,
         };
+        this._debugProvider = null;
 
         this._currentModel = this._computeModel();
+    }
+
+    setDebugProvider(fn) {
+        this._debugProvider = typeof fn === 'function' ? fn : null;
+    }
+
+    getDebugInfo() {
+        const extra = this._debugProvider ? (this._debugProvider() ?? {}) : {};
+        return {
+            panelVisible: this._environment.panelVisible,
+            inFullscreen: this._environment.inFullscreen,
+            ...extra,
+        };
     }
 
     setOptions(opts) {
@@ -549,5 +563,6 @@ export class PriorityManager extends Signals.EventEmitter {
     destroy() {
         this._clearTransientTimer();
         this._transient = null;
+        this._debugProvider = null;
     }
 }
