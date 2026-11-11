@@ -45,11 +45,37 @@ export function relativeLuminance(r, g, b) {
     return 0.2126 * linearChannel(r) + 0.7152 * linearChannel(g) + 0.0722 * linearChannel(b);
 }
 
+export function ensureReadableAccentOnDark(r, g, b, minLum = 0.50) {
+    if (relativeLuminance(r, g, b) >= minLum)
+        return { r, g, b, css: `rgb(${r}, ${g}, ${b})` };
+
+    let lo = 0;
+    let hi = 1;
+    let best = { r: 248, g: 250, b: 252 };
+    for (let i = 0; i < 12; i++) {
+        const mid = (lo + hi) * 0.5;
+        const nr = clampByte(r + (248 - r) * mid);
+        const ng = clampByte(g + (250 - g) * mid);
+        const nb = clampByte(b + (252 - b) * mid);
+        if (relativeLuminance(nr, ng, nb) >= minLum) {
+            best = { r: nr, g: ng, b: nb };
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    return {
+        ...best,
+        css: `rgb(${best.r}, ${best.g}, ${best.b})`,
+    };
+}
+
 export function buildSolidPalette({ r, g, b, pr = 10, pg = 12, pb = 17, synced = false }) {
     const lum = relativeLuminance(r, g, b);
     const lightAccent = lum > 0.42;
     const accentFgCss = lightAccent ? '#090D16' : '#FFFFFF';
     const accentSubFgCss = lightAccent ? 'rgba(9, 13, 22, 0.72)' : 'rgba(255, 255, 255, 0.78)';
+    const onDark = ensureReadableAccentOnDark(r, g, b, 0.50);
 
     // Subtle opaque hover shift so active solid buttons respond cleanly
     const delta = lightAccent ? -16 : 18;
@@ -63,6 +89,7 @@ export function buildSolidPalette({ r, g, b, pr = 10, pg = 12, pb = 17, synced =
         synced: Boolean(synced),
         accentHex: `#${toHex(r)}${toHex(g)}${toHex(b)}`,
         accentCss: `rgb(${r}, ${g}, ${b})`,
+        accentOnDarkCss: onDark.css,
         accentHoverCss: `rgb(${hr}, ${hg}, ${hb})`,
         accentFgCss,
         accentSubFgCss,

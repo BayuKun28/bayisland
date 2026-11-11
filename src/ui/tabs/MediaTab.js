@@ -57,6 +57,7 @@ export class MediaTab {
 
         this._lastPalette = palette ?? null;
         const acc = palette?.accentCss || '#93c5fd';
+        const accOnDark = palette?.accentOnDarkCss || acc;
         const fg = palette?.accentFgCss || '#090d16';
 
         const media = model.persistent.media;
@@ -108,13 +109,13 @@ export class MediaTab {
             });
             srcRow.add_child(new St.Widget({
                 style_class: 'bayisland-media-source-dot',
-                style: `background-color: ${acc};`,
+                style: `background-color: ${accOnDark};`,
                 y_align: Clutter.ActorAlign.CENTER,
             }));
             srcRow.add_child(new St.Label({
                 text: (media.playerName || 'MEDIA').toUpperCase(),
                 style_class: 'bayisland-media-player',
-                style: `color: ${acc};`,
+                style: `color: ${accOnDark};`,
                 x_expand: true,
                 y_align: Clutter.ActorAlign.CENTER,
             }));
@@ -134,7 +135,7 @@ export class MediaTab {
                 }
             }
 
-            const { eqBox, bars } = buildEqualizerWidget(4, acc);
+            const { eqBox, bars } = buildEqualizerWidget(4, accOnDark);
             this._eqBox = eqBox;
             this._eqBox.visible = media.status === 'Playing';
             const waveHeights = [6, 12, 8, 11];

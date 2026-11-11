@@ -312,6 +312,48 @@ export default class BayIslandPreferences extends ExtensionPreferences {
         });
         conflictRow.add_suffix(disableExtBtn);
         topBarGroup.add(conflictRow);
+
+        const reloadNoticeRow = new Adw.ActionRow({
+            title: 'Session Restart Required for Top Bar Merge',
+            subtitle: 'Running GNOME Shell still has an older BayIsland build loaded in RAM. Log out and log back in once on Wayland so Top Bar Merge and Autohide take effect.',
+            visible: false,
+        });
+        reloadNoticeRow.add_prefix(new Gtk.Image({ icon_name: 'system-reboot-symbolic' }));
+        topBarGroup.add(reloadNoticeRow);
+
+        const probeCancel = new Gio.Cancellable();
+        cleanups.push(() => probeCancel.cancel());
+        try {
+            Gio.DBus.session.call(
+                'org.bayisland.Shell',
+                '/org/bayisland/Shell',
+                'org.bayisland.Shell',
+                'GetState',
+                null,
+                new GLib.VariantType('(s)'),
+                Gio.DBusCallFlags.NO_AUTO_START,
+                600,
+                probeCancel,
+                (conn, res) => {
+                    if (probeCancel.is_cancelled())
+                        return;
+                    try {
+                        const out = conn.call_finish(res);
+                        const jsonStr = out?.deepUnpack?.()?.[0];
+                        if (!jsonStr)
+                            return;
+                        const stateObj = JSON.parse(jsonStr);
+                        if (stateObj && !Object.prototype.hasOwnProperty.call(stateObj, 'topbarIntegrationMode'))
+                            reloadNoticeRow.visible = true;
+                    } catch {
+                        // Older/disabled shell or non-JSON response
+                    }
+                }
+            );
+        } catch {
+            // Best effort session probe
+        }
+
         page.add(topBarGroup);
 
         // 2. Shape & Spacing

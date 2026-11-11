@@ -18,6 +18,7 @@ export class ShelfTab {
 
         this._lastPalette = palette ?? null;
         const acc = palette?.accentCss || '#93c5fd';
+        const accOnDark = palette?.accentOnDarkCss || acc;
         const fg = palette?.accentFgCss || '#090d16';
 
         const snap = shelfSnapshot ?? { enabled: true, items: [] };
@@ -55,7 +56,7 @@ export class ShelfTab {
             icon_name: 'folder-download-symbolic',
             icon_size: isEmpty ? 28 : 20,
             x_align: Clutter.ActorAlign.CENTER,
-            style: dragHighlight ? `color: ${fg};` : `color: ${acc};`,
+            style: dragHighlight ? `color: ${fg};` : `color: ${accOnDark};`,
         }));
         this._dropBox.add_child(new St.Label({
             text: dragHighlight
@@ -141,7 +142,7 @@ export class ShelfTab {
     }
 
     _buildItemRow(item, palette) {
-        const acc = palette?.accentCss || '#93c5fd';
+        const acc = palette?.accentOnDarkCss || palette?.accentCss || '#93c5fd';
 
         const row = new St.BoxLayout({
             style_class: `bayisland-shelf-row${item.pinned ? ' bayisland-list-card-pinned' : ''}`,

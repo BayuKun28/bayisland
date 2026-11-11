@@ -85,6 +85,8 @@ export class CompactView {
         this._integratedInSlot = false;
         this._integratedFullLayout = true;
         this._integratedPreset = 'hover-pill';
+        this._integratedShowDate = true;
+        this._integratedShowBatText = true;
 
         this._titleLabel = null;
         this._timerLabel = null;
@@ -92,6 +94,7 @@ export class CompactView {
 
         this._idleUnreadDot = null;
         this._peekDateLabel = null;
+        this._peekDateSep = null;
         this._peekClockLabel = null;
         this._peekBatRing = null;
         this._peekBatNumLabel = null;
@@ -159,17 +162,19 @@ export class CompactView {
         if (this._peekProfileIcon)
             this._peekProfileIcon.icon_name = getProfileIconName(meta.powerProfile);
 
-        if (this._peekBatRing && this._peekBatNumLabel) {
+        if (this._peekBatRing) {
             const pct = Math.max(0, Math.min(100, Math.round(meta.powerPct ?? 0)));
             const ringColor = (meta.onBattery && pct <= 20)
                 ? '#ef4444'
                 : (meta.charging ? '#4ade80' : '#34d399');
-            const compactFont = this._integratedHeight <= 25 ? '6px' : '7px';
             this._peekBatRing.setValues({ fraction: pct / 100, colorCss: ringColor });
-            this._peekBatNumLabel.text = String(pct);
-            this._peekBatNumLabel.style = (meta.onBattery && pct <= 20)
-                ? `color: #fca5a5;${useCompactBattery ? ` font-size: ${compactFont};` : ''}`
-                : `color: #f8fafc;${useCompactBattery ? ` font-size: ${compactFont};` : ''}`;
+            if (this._peekBatNumLabel) {
+                const compactFont = this._integratedHeight <= 25 ? '9.5px' : '10.5px';
+                this._peekBatNumLabel.text = `${pct}%`;
+                this._peekBatNumLabel.style = (meta.onBattery && pct <= 20)
+                    ? `color: #fca5a5;${useCompactBattery ? ` font-size: ${compactFont};` : ''}`
+                    : `color: #f1f5f9;${useCompactBattery ? ` font-size: ${compactFont};` : ''}`;
+            }
         }
 
         if (this._peekBadgeLabel && unread > 0)
@@ -193,7 +198,12 @@ export class CompactView {
 
         if (model.state === IslandState.INTEGRATED_CLOCK && this._currentPrimary === 'integrated-clock') {
             const wantFull = this._useIntegratedFullLayout(model);
-            if (wantFull !== this._integratedFullLayout || (model.preset ?? 'hover-pill') !== this._integratedPreset)
+            const wantDate = this._integratedMaxWidth >= 208;
+            const wantBatText = this._integratedMaxWidth >= 264;
+            if (wantFull !== this._integratedFullLayout ||
+                (model.preset ?? 'hover-pill') !== this._integratedPreset ||
+                wantDate !== this._integratedShowDate ||
+                wantBatText !== this._integratedShowBatText)
                 return false;
 
             const meta = model.meta ?? {};
@@ -227,7 +237,7 @@ export class CompactView {
 
         if (model.state === IslandState.DROP_CATCH && this._currentPrimary === 'drop-catch') {
             const hi = Boolean(model.meta?.dragHighlight);
-            const acc = this._lastPalette?.accentCss || '#93c5fd';
+            const acc = this._lastPalette?.accentOnDarkCss || this._lastPalette?.accentCss || '#93c5fd';
             const fg = this._lastPalette?.accentFgCss || '#090d16';
             if (this._dropIcon)
                 this._dropIcon.style = hi ? `color: ${fg};` : `color: ${acc};`;
@@ -293,20 +303,26 @@ export class CompactView {
             const extraClockPx = Math.max(0, clockStr.length - 5) * 6;
             const full = this._useIntegratedFullLayout(model);
             let w;
-            if (full)
-                w = (unread > 0 ? 258 : (dnd ? 238 : 226)) + extraClockPx;
-            else
-                w = (unread > 0 || dnd ? 168 : 148) + extraClockPx;
+            if (full) {
+                const batBase = this._integratedMaxWidth >= 264 ? 276 : 236;
+                w = batBase + (unread > 0 ? 32 : (dnd ? 18 : 0)) + extraClockPx;
+            } else {
+                w = (unread > 0 || dnd ? 176 : 158) + extraClockPx;
+            }
             return {
                 width: Math.min(this._integratedMaxWidth, w),
                 height: this._integratedHeight,
             };
         }
         if (model.state === IslandState.HOVER_PEEK) {
-            const unread = model.meta?.unreadNotifs ?? 0;
-            const dnd = Boolean(model.meta?.dnd);
-            const h = this._edgeFlush ? (36 + this._idleTopPad) : 36;
-            return { width: unread > 0 ? 270 : (dnd ? 250 : 236), height: h };
+            const meta = model.meta ?? {};
+            const unread = meta.unreadNotifs ?? 0;
+            const dnd = Boolean(meta.dnd);
+            const clockStr = meta.clockText || getPeekClockString();
+            const extraClockPx = Math.max(0, clockStr.length - 5) * 6;
+            const h = this._edgeFlush ? (40 + this._idleTopPad) : 40;
+            const w = (unread > 0 ? 336 : (dnd ? 318 : 306)) + extraClockPx;
+            return { width: w, height: h };
         }
         if (model.state === IslandState.DROP_CATCH)
             return { width: 320, height: 68 };
@@ -347,6 +363,7 @@ export class CompactView {
         this._timerLabel = null;
         this._idleUnreadDot = null;
         this._peekDateLabel = null;
+        this._peekDateSep = null;
         this._peekClockLabel = null;
         this._peekBatRing = null;
         this._peekBatNumLabel = null;
@@ -384,7 +401,9 @@ export class CompactView {
         this._idleUnreadDot = new St.Widget({
             style_class: 'bayisland-idle-handle-dot',
             y_align: Clutter.ActorAlign.CENTER,
-            ...(palette?.accentCss ? { style: `background-color: ${palette.accentCss};` } : {}),
+            ...(palette?.accentOnDarkCss || palette?.accentCss
+                ? { style: `background-color: ${palette.accentOnDarkCss || palette.accentCss};` }
+                : {}),
             visible: hasNotifs,
         });
         wrap.add_child(this._idleUnreadDot);
@@ -399,12 +418,15 @@ export class CompactView {
         const meta = model.meta ?? {};
         const preset = model.preset ?? 'hover-pill';
         const fullLayout = this._useIntegratedFullLayout(model);
+        const showDate = this._integratedMaxWidth >= 208;
+        const showBatText = this._integratedMaxWidth >= 264;
         this._integratedPreset = preset;
         this._integratedFullLayout = fullLayout;
+        this._integratedShowDate = showDate;
+        this._integratedShowBatText = showBatText;
 
         const dateStr = meta.dateText || getPeekDateString();
         const clockStr = meta.clockText || getPeekClockString();
-        const showDate = this._integratedMaxWidth >= 204;
 
         if (fullLayout) {
             const box = new St.BoxLayout({
@@ -416,28 +438,37 @@ export class CompactView {
             });
 
             const pct = Math.max(0, Math.min(100, Math.round(meta.powerPct ?? 0)));
-            const ringSize = Math.max(18, Math.min(22, this._integratedHeight - 6));
-            const ringFont = ringSize <= 20 ? '6px' : '7px';
+            const ringSize = Math.max(15, Math.min(18, this._integratedHeight - 9));
             const ringColor = (meta.onBattery && pct <= 20)
                 ? '#ef4444'
                 : (meta.charging ? '#4ade80' : '#34d399');
+            const compactFont = this._integratedHeight <= 25 ? '9.5px' : '10.5px';
 
-            this._peekBatNumLabel = new St.Label({
-                text: String(pct),
-                style_class: 'bayisland-peek-ring-num',
-                style: (meta.onBattery && pct <= 20)
-                    ? `color: #fca5a5; font-size: ${ringFont};`
-                    : `color: #f8fafc; font-size: ${ringFont};`,
+            const batChip = new St.BoxLayout({
+                style_class: 'bayisland-peek-chip bayisland-peek-chip-compact',
+                y_align: Clutter.ActorAlign.CENTER,
             });
             this._peekBatRing = createRingGauge({
                 size: ringSize,
-                strokeWidth: 2.2,
+                strokeWidth: 2.1,
                 fraction: pct / 100,
                 colorCss: ringColor,
                 trackCss: 'rgba(255, 255, 255, 0.14)',
-                centerChild: this._peekBatNumLabel,
             });
-            box.add_child(this._peekBatRing.actor);
+            batChip.add_child(this._peekBatRing.actor);
+
+            if (showBatText) {
+                this._peekBatNumLabel = new St.Label({
+                    text: `${pct}%`,
+                    style_class: 'bayisland-peek-bat-text',
+                    style: (meta.onBattery && pct <= 20)
+                        ? `color: #fca5a5; font-size: ${compactFont};`
+                        : `color: #f1f5f9; font-size: ${compactFont};`,
+                    y_align: Clutter.ActorAlign.CENTER,
+                });
+                batChip.add_child(this._peekBatNumLabel);
+            }
+            box.add_child(batChip);
 
             const centerGroup = new St.BoxLayout({
                 style_class: 'bayisland-peek-center',
@@ -452,6 +483,12 @@ export class CompactView {
                     y_align: Clutter.ActorAlign.CENTER,
                 });
                 centerGroup.add_child(this._peekDateLabel);
+                this._peekDateSep = new St.Label({
+                    text: '•',
+                    style_class: 'bayisland-peek-sep',
+                    y_align: Clutter.ActorAlign.CENTER,
+                });
+                centerGroup.add_child(this._peekDateSep);
             }
             this._peekClockLabel = new St.Label({
                 text: clockStr,
@@ -466,13 +503,17 @@ export class CompactView {
                 y_align: Clutter.ActorAlign.CENTER,
             });
 
+            const statusChip = new St.BoxLayout({
+                style_class: 'bayisland-peek-chip bayisland-peek-chip-compact',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
             this._peekProfileIcon = new St.Icon({
                 icon_name: getProfileIconName(meta.powerProfile),
                 icon_size: 12,
-                style: `color: ${palette?.accentCss ?? '#93c5fd'};`,
+                style: `color: ${palette?.accentOnDarkCss ?? palette?.accentCss ?? '#93c5fd'};`,
                 y_align: Clutter.ActorAlign.CENTER,
             });
-            rightGroup.add_child(this._peekProfileIcon);
+            statusChip.add_child(this._peekProfileIcon);
 
             const unread = meta.unreadNotifs ?? 0;
             if (unread > 0) {
@@ -493,7 +534,7 @@ export class CompactView {
                     style: `color: ${fg}; font-weight: 700;`,
                 });
                 this._peekBadge.add_child(this._peekBadgeLabel);
-                rightGroup.add_child(this._peekBadge);
+                statusChip.add_child(this._peekBadge);
             } else if (meta.dnd) {
                 this._peekDndIcon = new St.Icon({
                     icon_name: 'notifications-disabled-symbolic',
@@ -501,14 +542,18 @@ export class CompactView {
                     style: 'color: #fbbf24;',
                     y_align: Clutter.ActorAlign.CENTER,
                 });
-                rightGroup.add_child(this._peekDndIcon);
+                statusChip.add_child(this._peekDndIcon);
             }
+            rightGroup.add_child(statusChip);
 
-            rightGroup.add_child(new St.Icon({
-                icon_name: 'pan-down-symbolic',
-                icon_size: 12,
-                style_class: 'bayisland-peek-chevron',
+            rightGroup.add_child(new St.Bin({
+                style_class: 'bayisland-peek-expand-btn bayisland-peek-expand-btn-compact',
                 y_align: Clutter.ActorAlign.CENTER,
+                child: new St.Icon({
+                    icon_name: 'pan-down-symbolic',
+                    icon_size: 11,
+                    style_class: 'bayisland-peek-chevron',
+                }),
             }));
             box.add_child(rightGroup);
             return this._attachRoot(box);
@@ -534,23 +579,32 @@ export class CompactView {
             row.add_child(this._peekDndIcon);
         }
 
-        this._peekDateLabel = new St.Label({
-            text: dateStr,
-            style_class: 'bayisland-peek-date',
-            y_align: Clutter.ActorAlign.CENTER,
-        });
+        if (showDate) {
+            this._peekDateLabel = new St.Label({
+                text: dateStr,
+                style_class: 'bayisland-peek-date',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            row.add_child(this._peekDateLabel);
+            this._peekDateSep = new St.Label({
+                text: '•',
+                style_class: 'bayisland-peek-sep',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            row.add_child(this._peekDateSep);
+        }
         this._peekClockLabel = new St.Label({
             text: clockStr,
             style_class: 'bayisland-peek-clock',
             y_align: Clutter.ActorAlign.CENTER,
         });
-        row.add_child(this._peekDateLabel);
         row.add_child(this._peekClockLabel);
 
+        const accentBright = palette?.accentOnDarkCss ?? palette?.accentCss;
         this._integratedDot = new St.Widget({
             style_class: 'bayisland-idle-handle-dot',
             y_align: Clutter.ActorAlign.CENTER,
-            ...(palette?.accentCss ? { style: `background-color: ${palette.accentCss};` } : {}),
+            ...(accentBright ? { style: `background-color: ${accentBright};` } : {}),
             visible: unread > 0,
         });
         row.add_child(this._integratedDot);
@@ -566,7 +620,7 @@ export class CompactView {
             stack.add_child(row);
             stack.add_child(new St.Widget({
                 style_class: 'bayisland-integrated-handle-accent',
-                ...(palette?.accentCss ? { style: `background-color: ${palette.accentCss};` } : {}),
+                ...(accentBright ? { style: `background-color: ${accentBright};` } : {}),
                 x_align: Clutter.ActorAlign.CENTER,
                 y_align: Clutter.ActorAlign.END,
                 x_expand: true,
@@ -592,32 +646,39 @@ export class CompactView {
                 : {}),
             x_expand: true,
             y_expand: !this._edgeFlush,
-            height: 36,
+            height: 40,
             y_align: Clutter.ActorAlign.CENTER,
         });
 
-        // Left Anchor: 24px Cairo Battery Ring
+        // Left Chip: Clean 18px Cairo Battery Arc + Tabular Readout
         const pct = Math.max(0, Math.min(100, Math.round(meta.powerPct ?? 0)));
         const ringColor = (meta.onBattery && pct <= 20)
             ? '#ef4444'
             : (meta.charging ? '#4ade80' : '#34d399');
 
-        this._peekBatNumLabel = new St.Label({
-            text: String(pct),
-            style_class: 'bayisland-peek-ring-num',
-            style: (meta.onBattery && pct <= 20) ? 'color: #fca5a5;' : 'color: #f8fafc;',
+        const batChip = new St.BoxLayout({
+            style_class: 'bayisland-peek-chip',
+            y_align: Clutter.ActorAlign.CENTER,
         });
         this._peekBatRing = createRingGauge({
-            size: 24,
-            strokeWidth: 2.4,
+            size: 18,
+            strokeWidth: 2.3,
             fraction: pct / 100,
             colorCss: ringColor,
             trackCss: 'rgba(255, 255, 255, 0.14)',
-            centerChild: this._peekBatNumLabel,
         });
-        box.add_child(this._peekBatRing.actor);
+        batChip.add_child(this._peekBatRing.actor);
 
-        // Center Focal Zone: Symmetrical Date + Clock
+        this._peekBatNumLabel = new St.Label({
+            text: `${pct}%`,
+            style_class: 'bayisland-peek-bat-text',
+            style: (meta.onBattery && pct <= 20) ? 'color: #fca5a5;' : 'color: #f1f5f9;',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        batChip.add_child(this._peekBatNumLabel);
+        box.add_child(batChip);
+
+        // Center Focal Zone: Symmetrical Date • Clock
         const centerGroup = new St.BoxLayout({
             style_class: 'bayisland-peek-center',
             x_expand: true,
@@ -629,28 +690,38 @@ export class CompactView {
             style_class: 'bayisland-peek-date',
             y_align: Clutter.ActorAlign.CENTER,
         });
+        this._peekDateSep = new St.Label({
+            text: '•',
+            style_class: 'bayisland-peek-sep',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
         this._peekClockLabel = new St.Label({
             text: meta.clockText || getPeekClockString(),
             style_class: 'bayisland-peek-clock',
             y_align: Clutter.ActorAlign.CENTER,
         });
         centerGroup.add_child(this._peekDateLabel);
+        centerGroup.add_child(this._peekDateSep);
         centerGroup.add_child(this._peekClockLabel);
         box.add_child(centerGroup);
 
-        // Right Anchor: Power Profile + Unread Badge / DND + Expand Chevron
+        // Right Anchor: Status Chip (Power Profile + Unread / DND) + Circular Expand Cue
         const rightGroup = new St.BoxLayout({
             style_class: 'bayisland-peek-right',
             y_align: Clutter.ActorAlign.CENTER,
         });
 
+        const statusChip = new St.BoxLayout({
+            style_class: 'bayisland-peek-chip',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
         this._peekProfileIcon = new St.Icon({
             icon_name: getProfileIconName(meta.powerProfile),
             icon_size: 13,
-            style: `color: ${palette?.accentCss ?? '#93c5fd'};`,
+            style: `color: ${palette?.accentOnDarkCss ?? palette?.accentCss ?? '#93c5fd'};`,
             y_align: Clutter.ActorAlign.CENTER,
         });
-        rightGroup.add_child(this._peekProfileIcon);
+        statusChip.add_child(this._peekProfileIcon);
 
         const unread = meta.unreadNotifs ?? 0;
         if (unread > 0) {
@@ -671,7 +742,7 @@ export class CompactView {
                 style: `color: ${fg}; font-weight: 700;`,
             });
             this._peekBadge.add_child(this._peekBadgeLabel);
-            rightGroup.add_child(this._peekBadge);
+            statusChip.add_child(this._peekBadge);
         } else if (meta.dnd) {
             this._peekDndIcon = new St.Icon({
                 icon_name: 'notifications-disabled-symbolic',
@@ -679,14 +750,18 @@ export class CompactView {
                 style: 'color: #fbbf24;',
                 y_align: Clutter.ActorAlign.CENTER,
             });
-            rightGroup.add_child(this._peekDndIcon);
+            statusChip.add_child(this._peekDndIcon);
         }
+        rightGroup.add_child(statusChip);
 
-        rightGroup.add_child(new St.Icon({
-            icon_name: 'pan-down-symbolic',
-            icon_size: 13,
-            style_class: 'bayisland-peek-chevron',
+        rightGroup.add_child(new St.Bin({
+            style_class: 'bayisland-peek-expand-btn',
             y_align: Clutter.ActorAlign.CENTER,
+            child: new St.Icon({
+                icon_name: 'pan-down-symbolic',
+                icon_size: 12,
+                style_class: 'bayisland-peek-chevron',
+            }),
         }));
         box.add_child(rightGroup);
 
@@ -711,7 +786,7 @@ export class CompactView {
         this._currentPrimary = 'drop-catch';
         this._lastPalette = palette;
         const hi = Boolean(model.meta?.dragHighlight);
-        const acc = palette?.accentCss || '#93c5fd';
+        const acc = palette?.accentOnDarkCss || palette?.accentCss || '#93c5fd';
         const fg = palette?.accentFgCss || '#090d16';
 
         const box = new St.BoxLayout({
@@ -878,7 +953,7 @@ export class CompactView {
         this._titleLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
         box.add_child(this._titleLabel);
 
-        const { eqBox, bars } = buildEqualizerWidget(4, palette?.accentCss ?? '#93c5fd');
+        const { eqBox, bars } = buildEqualizerWidget(4, palette?.accentOnDarkCss ?? palette?.accentCss ?? '#93c5fd');
         this._eqBars = bars;
         box.add_child(eqBox);
 

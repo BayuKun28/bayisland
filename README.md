@@ -27,10 +27,10 @@ BayIsland replaces scattered top-bar popups, hardware OSD overlays, and disconne
 - **Integrated Top Bar Clock (`merged-pill` [default])**: Replaces the GNOME center clock seamlessly with a single unified capsule when Top Bar is visible—available in 3 presets: **Hover Pill Status** (Battery Ring + Date/Clock + Power Profile + Unread/DND Badge + chevron), **Minimal Clock** (expands on hover), or **Clock + Pastel Handle**. Left-click expands the 5-Tab Hub below Top Bar; right-click toggles GNOME's native calendar & notification popover.
 - **Built-in Top Bar Autohide (`disabled` / `intellihide` / `always`)**: Hide/reveal GNOME Top Bar directly inside BayIsland with top-edge barrier exclusion (`edges` keeps left+right sides for Top Bar reveal while leaving top-center free for BayIsland).
 - **Idle Grab Handle (`116×6 px` pastel-blue bar inside `160×18 px` hover zone)**: Shown automatically when Top Bar hides (autohide, `hidetopbar`, maximized/fullscreen apps) or in `separate` mode—manages Mutter unredirect cleanly so it stays visible and hoverable over maximized or fullscreen windows.
-- **Hover-Peek Pill (`36 px` height)**: Symmetrical 3-zone capsule revealed after configurable hover dwell (`160 ms` default):
-  - *Left*: `24 px` live Cairo battery percentage ring.
-  - *Center*: Short date + live clock.
-  - *Right*: Active Ubuntu power profile icon + unread count badge or Do Not Disturb indicator + expand chevron.
+- **Hover-Peek Pill (`40 px` height)**: Symmetrical 3-zone obsidian capsule revealed after configurable hover dwell (`160 ms` default):
+  - *Left Chip*: `18 px` live Cairo battery arc + tabular percentage readout.
+  - *Center*: Short date • live clock.
+  - *Right*: Status chip (power profile icon + unread count badge or Do Not Disturb indicator) + circular expand chevron.
 - **Compact & Split Pills**: Shows active **MPRIS** playback (mini cover art, track info, animated equalizer) or **Focus Timer**; splits into dual side-by-side modules when both are active concurrently.
 - **Transient Banners & Native OSD Replacement**: Intercepts `Main.osdWindowManager.show` for **Volume**, **Mic Mute**, **Screen Brightness**, **Keyboard Backlight**, and **Caffeine**, plus incoming notifications and D-Bus task alerts.
 - **Drop Catch (`DROP_CATCH`)**: Automatically expands into a drop-target pill when dragging files toward the top center of the screen, opening straight into the Shelf tab.
@@ -128,6 +128,7 @@ bayisland/
     └── utils/
         ├── ArtCache.js               # Asynchronous album art loader & cache for MPRIS covers
         ├── ExtensionCompat.js        # Runtime detection of HideTopBar, OpenBar, Blur My Shell, etc.
+        ├── NotifFormatter.js         # Domain & whitespace cleaner for desktop and web push alerts
         └── ThemeBridge.js            # Accent palette resolver, WCAG contrast calculator & OpenBar reader
 ```
 

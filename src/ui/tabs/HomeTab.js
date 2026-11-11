@@ -6,6 +6,8 @@ import Pango from 'gi://Pango';
 import St from 'gi://St';
 import * as Calendar from 'resource:///org/gnome/shell/ui/calendar.js';
 
+import { formatNotificationContent } from '../../utils/NotifFormatter.js';
+
 const EN_WEEKDAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 const EN_DAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const EN_MONTHS = [
@@ -77,20 +79,6 @@ function isSameLocalDay(a, b) {
         a.getDate() === b.getDate();
 }
 
-function cleanCardText(raw, maxChars) {
-    if (!raw || typeof raw !== 'string')
-        return '';
-    const normalized = raw
-        .replace(/\r\n/g, '\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
-    if (!normalized)
-        return '';
-    if (normalized.length <= maxChars)
-        return normalized;
-    return `${normalized.slice(0, maxChars - 1).trimEnd()}…`;
-}
-
 function isRasterAvatarIcon(gicon) {
     if (!gicon)
         return false;
@@ -144,6 +132,7 @@ export class HomeTab {
         this._lastHistory = notifHistory ?? { notifications: [], tasks: [], totalUnread: 0 };
 
         const acc = palette?.accentCss || '#93c5fd';
+        const accOnDark = palette?.accentOnDarkCss || acc;
 
         const root = new St.BoxLayout({
             style_class: 'bayisland-bento-grid',
@@ -175,7 +164,7 @@ export class HomeTab {
         this._weekdayLabel = new St.Label({
             text: nowStrings.weekday,
             style_class: 'bayisland-hero-weekday',
-            style: `color: ${acc};`,
+            style: `color: ${accOnDark};`,
         });
         this._dayLabel = new St.Label({
             text: nowStrings.dayNum,
@@ -563,6 +552,7 @@ export class HomeTab {
 
     _buildTimerCard(timer, palette) {
         const acc = palette?.accentCss || '#93c5fd';
+        const accOnDark = palette?.accentOnDarkCss || acc;
         const fg = palette?.accentFgCss || '#090d16';
 
         const card = new St.BoxLayout({
@@ -588,7 +578,7 @@ export class HomeTab {
         this._timerSubLabel = new St.Label({
             text: hasActive ? `${timer.label} • ${timer.running ? 'Run' : 'Paused'}` : 'Ready',
             style_class: 'bayisland-muted-xs',
-            ...(hasActive && timer.running ? { style: `color: ${acc}; font-weight: 700;` } : {}),
+            ...(hasActive && timer.running ? { style: `color: ${accOnDark}; font-weight: 700;` } : {}),
             y_align: Clutter.ActorAlign.CENTER,
         });
         topRow.add_child(this._timerSubLabel);
@@ -792,9 +782,18 @@ export class HomeTab {
     }
 
     _buildNotifCard(n) {
-        const cleanTitle = cleanCardText(n.title || 'Notification', 96) || 'Notification';
-        const cleanBody = cleanCardText(n.body || '', 220);
-        const cleanSource = cleanCardText(n.sourceTitle || '', 38);
+        const formatted = formatNotificationContent({
+            title: n.title || 'Notification',
+            body: n.body || '',
+            sourceTitle: n.sourceTitle || '',
+            kind: 'notification',
+            maxTitleChars: 96,
+            maxBodyChars: 240,
+            maxSourceChars: 42,
+        });
+        const cleanTitle = formatted.title;
+        const cleanBody = formatted.body;
+        const cleanSource = formatted.metaLabel || formatted.rawSource;
 
         const card = new St.BoxLayout({
             style_class: `bayisland-notif-card${n.urgent ? ' bayisland-notif-card-urgent' : ''}`,
@@ -818,7 +817,7 @@ export class HomeTab {
                 y_align: Clutter.ActorAlign.CENTER,
                 child: new St.Icon({
                     gicon: n.icon,
-                    icon_size: 20,
+                    icon_size: 14,
                 }),
             });
             topRow.add_child(avatarWrap);
@@ -1026,7 +1025,7 @@ export class HomeTab {
         if (this._timerValueLabel && t?.active) {
             this._timerValueLabel.text = formatClock(t.remainingSec ?? 0);
             if (this._timerSubLabel) {
-                const acc = this._lastPalette?.accentCss || '#93c5fd';
+                const acc = this._lastPalette?.accentOnDarkCss || this._lastPalette?.accentCss || '#93c5fd';
                 this._timerSubLabel.text = `${t.label} • ${t.running ? 'Run' : 'Paused'}`;
                 this._timerSubLabel.style = t.running ? `color: ${acc}; font-weight: 700;` : null;
             }

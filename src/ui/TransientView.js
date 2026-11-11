@@ -4,19 +4,7 @@ import Pango from 'gi://Pango';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-function cleanBannerText(raw, maxChars) {
-    if (!raw || typeof raw !== 'string')
-        return '';
-    const normalized = raw
-        .replace(/\r\n/g, '\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
-    if (!normalized)
-        return '';
-    if (normalized.length <= maxChars)
-        return normalized;
-    return `${normalized.slice(0, maxChars - 1).trimEnd()}…`;
-}
+import { formatNotificationContent } from '../utils/NotifFormatter.js';
 
 function isRasterAvatarIcon(gicon, fallbackName) {
     if (!gicon)
@@ -28,6 +16,19 @@ function isRasterAvatarIcon(gicon, fallbackName) {
         return names.length > 0 && names.every(n => !n.endsWith('-symbolic'));
     }
     return false;
+}
+
+function classifyActionRole(act, index, totalActions) {
+    const labelLower = String(act?.label || '').trim().toLowerCase();
+    if (labelLower === 'clear' || labelLower === 'dismiss' || labelLower === 'close')
+        return 'muted';
+    if (labelLower === 'settings' || labelLower.includes('notification settings'))
+        return 'secondary';
+    if (act?.primary)
+        return 'primary';
+    if (index === 0 && totalActions >= 1)
+        return 'subtle-highlight';
+    return 'secondary';
 }
 
 /**
@@ -102,16 +103,16 @@ export class TransientView {
             body.length * 0.9 +
             actionChars * 1.1;
 
-        let desired = 364;
+        let desired = 382;
         if (contentScore > 140 || actions.length >= 3)
-            desired = 472;
-        else if (contentScore > 85 || actions.length === 2)
-            desired = 440;
-        else if (contentScore > 48 || body.length > 0)
-            desired = 408;
+            desired = 476;
+        else if (contentScore > 80 || actions.length === 2)
+            desired = 446;
+        else if (contentScore > 44 || body.length > 0)
+            desired = 416;
 
         if (t.kind === 'alarm')
-            desired = Math.max(desired, 380);
+            desired = Math.max(desired, 396);
 
         return Math.min(maxWidth, desired);
     }
@@ -177,13 +178,13 @@ export class TransientView {
         const width = this._targetWidth || this._computeTargetWidth(t);
 
         const isCompactBar = t.kind === 'osd' || (t.kind === 'power' && !t.body);
-        const minKindH = isCompactBar ? 54 : 68;
+        const minKindH = isCompactBar ? 54 : 70;
 
         let measuredH = minKindH;
         if (this._root && this._centerCol && this._root.get_stage()) {
             this._layoutActionsOnStage();
 
-            const centerW = this._centerWidth || Math.max(180, width - 96);
+            const centerW = this._centerWidth || Math.max(160, width - 116);
             let colH = 0;
             let rowCount = 0;
 
@@ -222,20 +223,25 @@ export class TransientView {
 
             if (this._actionsWrap) {
                 const [aMin, aNat] = this._actionsWrap.get_preferred_height(centerW);
-                colH += Math.ceil(Math.max(aMin, aNat));
+                colH += Math.ceil(Math.max(aMin, aNat)) + 6;
                 rowCount++;
             }
 
             if (rowCount > 1)
                 colH += (rowCount - 1) * 4;
 
-            // Outer vertical padding: 13px top + 13px bottom for rich, 10px + 10px for compact bars
-            const padY = this._isRichLayout ? 26 : 20;
+            const padY = this._isRichLayout ? 28 : 20;
+            const [colMin, colNat] = this._centerCol.get_preferred_height(centerW);
+            const [rootMin, rootNat] = this._root.get_preferred_height(width);
+            const directH = Math.max(
+                Math.ceil(Math.max(colMin, colNat)) + padY,
+                Math.ceil(Math.max(rootMin, rootNat))
+            );
             const iconReserve = (this._isAvatar ? 40 : 34) + padY;
-            measuredH = Math.max(minKindH, Math.ceil(Math.max(iconReserve, colH + padY)));
+            measuredH = Math.max(minKindH, Math.ceil(Math.max(iconReserve, colH + padY, directH)) + 2);
         } else if (this._bodyLabel) {
-            const lines = Math.max(1, Math.ceil((t.body || '').length / 48));
-            measuredH = Math.max(minKindH, 68 + lines * 18 + (this._hasActions ? 36 : 0));
+            const lines = Math.max(1, Math.ceil((t.body || '').length / 46));
+            measuredH = Math.max(minKindH, 74 + lines * 19 + (this._hasActions ? 40 : 0));
         }
 
         return {
@@ -246,14 +252,19 @@ export class TransientView {
 
     render(model, palette) {
         const t = model.transient;
-        const cleanTitle = cleanBannerText(t.title || 'BayIsland', 130) || 'BayIsland';
-        const cleanBody = cleanBannerText(t.body || '', 380);
-        const cleanSource = cleanBannerText(t.sourceTitle || '', 48);
-        const showSource = Boolean(
-            cleanSource &&
-            cleanSource.toLowerCase() !== cleanTitle.toLowerCase() &&
-            !cleanTitle.toLowerCase().includes(cleanSource.toLowerCase())
-        );
+        const formatted = formatNotificationContent({
+            title: t.title || 'BayIsland',
+            body: t.body || '',
+            sourceTitle: t.sourceTitle || '',
+            kind: t.kind || 'notification',
+            maxTitleChars: 130,
+            maxBodyChars: 380,
+            maxSourceChars: 48,
+        });
+        const cleanTitle = formatted.title;
+        const cleanBody = formatted.body;
+        const cleanSource = formatted.metaLabel;
+        const showSource = Boolean(cleanSource);
         const actions = Array.isArray(t.actions) ? t.actions.slice(0, 3) : [];
         const hasClose = t.kind === 'notification' || t.kind === 'alarm' || Boolean(t.sticky);
 
@@ -290,10 +301,10 @@ export class TransientView {
         this._isAvatar = isRasterAvatarIcon(gicon, t.iconName);
         const iconSizePx = this._isAvatar ? 40 : 34;
 
-        // Calculate exact column width so Pango wrapping & action rows stay pixel-accurate
-        const padX = 32; // 16px left + 16px right
+        // Exact horizontal budget: left/right pad (32) + icon + spacing (12) + optional close spacing (12 + 24)
+        const padX = 32;
         const iconGap = 12;
-        const closeReserve = hasClose ? (26 + 10) : 0;
+        const closeReserve = hasClose ? (24 + 12) : 0;
         this._centerWidth = Math.max(160, this._targetWidth - padX - iconSizePx - iconGap - closeReserve);
 
         const topAlign = this._isRichLayout ? Clutter.ActorAlign.START : Clutter.ActorAlign.CENTER;
@@ -320,7 +331,7 @@ export class TransientView {
             ...(gicon
                 ? { gicon }
                 : { icon_name: t.iconName || 'dialog-information-symbolic' }),
-            icon_size: this._isAvatar ? iconSizePx : 18,
+            icon_size: this._isAvatar ? 26 : 18,
             ...(t.iconColor && !this._isAvatar ? { style: `color: ${t.iconColor};` } : {}),
         });
         iconWrap.set_child(this._icon);
@@ -456,11 +467,23 @@ export class TransientView {
             const singleRow = new St.BoxLayout({
                 style_class: 'bayisland-actions-row',
             });
-            for (const act of actions) {
+            for (let idx = 0; idx < actions.length; idx++) {
+                const act = actions[idx];
+                const role = classifyActionRole(act, idx, actions.length);
+                let btnCls = 'bayisland-action-btn';
+                let btnStyle = null;
+                if (role === 'primary') {
+                    btnCls += ' bayisland-action-btn-primary';
+                    btnStyle = `background-color: ${acc}; color: ${fg};`;
+                } else if (role === 'subtle-highlight') {
+                    btnCls += ' bayisland-action-btn-subtle';
+                } else if (role === 'muted') {
+                    btnCls += ' bayisland-action-btn-muted';
+                }
                 const btn = new St.Button({
                     label: act.label,
-                    style_class: `bayisland-action-btn${act.primary ? ' bayisland-action-btn-primary' : ''}`,
-                    ...(act.primary ? { style: `background-color: ${acc}; color: ${fg};` } : {}),
+                    style_class: btnCls,
+                    ...(btnStyle ? { style: btnStyle } : {}),
                     reactive: true,
                     can_focus: false,
                 });
@@ -522,14 +545,19 @@ export class TransientView {
         if (t.kind !== this._currentKind || (t.coalesceKey ?? null) !== this._currentCoalesceKey)
             return false;
 
-        const cleanTitle = cleanBannerText(t.title || 'BayIsland', 130) || 'BayIsland';
-        const cleanBody = cleanBannerText(t.body || '', 380);
-        const cleanSource = cleanBannerText(t.sourceTitle || '', 48);
-        const showSource = Boolean(
-            cleanSource &&
-            cleanSource.toLowerCase() !== cleanTitle.toLowerCase() &&
-            !cleanTitle.toLowerCase().includes(cleanSource.toLowerCase())
-        );
+        const formatted = formatNotificationContent({
+            title: t.title || 'BayIsland',
+            body: t.body || '',
+            sourceTitle: t.sourceTitle || '',
+            kind: t.kind || 'notification',
+            maxTitleChars: 130,
+            maxBodyChars: 380,
+            maxSourceChars: 48,
+        });
+        const cleanTitle = formatted.title;
+        const cleanBody = formatted.body;
+        const cleanSource = formatted.metaLabel;
+        const showSource = Boolean(cleanSource);
         const actions = Array.isArray(t.actions) ? t.actions.slice(0, 3) : [];
         const nextActionSig = actions.map(a => a?.label || '').join('|');
 
@@ -550,12 +578,16 @@ export class TransientView {
         if (Math.abs(this._targetWidth - prevWidth) > 24)
             return false;
 
+        if (this._sourceLabel)
+            this._sourceLabel.text = cleanSource;
         if (this._titleLabel)
             this._titleLabel.text = cleanTitle;
         if (this._bodyLabel && t.body !== undefined)
             this._bodyLabel.text = cleanBody;
         if (this._icon) {
             const gicon = this._resolveGIcon(t);
+            if (isRasterAvatarIcon(gicon, t.iconName) !== this._isAvatar)
+                return false;
             if (gicon)
                 this._icon.gicon = gicon;
             else if (t.iconName)

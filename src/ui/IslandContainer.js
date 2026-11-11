@@ -20,6 +20,7 @@ function isSamePalette(a, b) {
         return false;
     return a.pillBgCss === b.pillBgCss &&
         a.accentCss === b.accentCss &&
+        a.accentOnDarkCss === b.accentOnDarkCss &&
         a.accentFgCss === b.accentFgCss;
 }
 
@@ -736,8 +737,9 @@ export class IslandContainer {
         const model = this._priority.getModel();
         this._applyInlineTheme(this._lastState, model);
         if (model.state === IslandState.IDLE_BAR && this._compactView?._idleUnreadDot) {
-            if (palette?.accentCss)
-                this._compactView._idleUnreadDot.style = `background-color: ${palette.accentCss};`;
+            const dotCss = palette?.accentOnDarkCss ?? palette?.accentCss;
+            if (dotCss)
+                this._compactView._idleUnreadDot.style = `background-color: ${dotCss};`;
             return;
         }
         this.renderModel(model, false);
@@ -1339,10 +1341,10 @@ export class IslandContainer {
             };
 
             const monitor = Main.layoutManager.primaryMonitor ?? { x: 0, y: 0, width: 1280 };
-            if (prevState === IslandState.HOVER_PEEK && this._shell.y <= monitor.y + 1 && this._shell.height > 36) {
+            if (prevState === IslandState.HOVER_PEEK && this._shell.y <= monitor.y + 1 && this._shell.height > 40) {
                 this._compactView.stripEdgePadding();
                 this._shell.set_position(this._shell.x, monitor.y + this._topMargin);
-                this._shell.set_size(this._shell.width, 36);
+                this._shell.set_size(this._shell.width, 40);
             }
 
             const shrinkW = 132;
@@ -1439,7 +1441,7 @@ export class IslandContainer {
         if (!updatedInPlace) {
             if (model.state === IslandState.TRANSIENT_BANNER) {
                 const initW = this._transientView.estimateWidth(model);
-                this._contentBin.setChild(builtChild, { width: initW, height: 112 });
+                this._contentBin.setChild(builtChild, { width: initW, height: 240 });
                 size = this._getTargetSize(model);
                 this._contentBin.setLockedSize(size);
             } else {
