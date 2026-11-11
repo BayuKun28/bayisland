@@ -133,6 +133,9 @@ export class QuickActionsManager extends Signals.EventEmitter {
         // Bluetooth
         this._btClient = null;
         this._btIds = [];
+        this._btDeviceSigIds = new Map();
+        this._btConnectedAddresses = new Set();
+        this._btBootstrapped = false;
         this._rfkillProxy = null;
         this._rfkillSigId = 0;
 
@@ -511,6 +514,13 @@ export class QuickActionsManager extends Signals.EventEmitter {
                 this._btClient.connect('device-removed', () => this._syncBluetooth())
             );
             this._syncBluetooth();
+            if (this._timers) {
+                this._timers.setTimeout(() => {
+                    this._btBootstrapped = true;
+                }, 1500);
+            } else {
+                this._btBootstrapped = true;
+            }
         } catch {
             this._btClient = null;
         }
@@ -539,11 +549,33 @@ export class QuickActionsManager extends Signals.EventEmitter {
         try {
             const store = this._btClient.get_devices();
             const n = store?.get_n_items?.() ?? 0;
+            const currentConnected = new Set();
+
             for (let i = 0; i < n; i++) {
                 const dev = store.get_item(i);
-                if (dev?.connected)
-                    connectedNames.push(dev.alias || dev.name || 'Device');
+                if (!dev)
+                    continue;
+
+                const addr = dev.address || dev.name;
+                if (addr && !this._btDeviceSigIds.has(addr)) {
+                    const sid = dev.connect('notify::connected', () => this._syncBluetooth());
+                    this._btDeviceSigIds.set(addr, { dev, sid });
+                }
+
+                if (dev.connected) {
+                    const name = dev.alias || dev.name || 'Device';
+                    connectedNames.push(name);
+                    if (addr)
+                        currentConnected.add(addr);
+
+                    // Check if newly connected Bluetooth audio accessory
+                    if (this._btBootstrapped && addr && !this._btConnectedAddresses.has(addr)) {
+                        this._checkAndNotifyBtAccessory(dev);
+                    }
+                }
             }
+
+            this._btConnectedAddresses = currentConnected;
         } catch {
             // Ignore
         }
@@ -552,6 +584,49 @@ export class QuickActionsManager extends Signals.EventEmitter {
         this._state.btEnabled = Boolean(this._btClient.default_adapter_powered);
         this._state.btConnectedNames = connectedNames;
         this._emitChanged();
+    }
+
+    _checkAndNotifyBtAccessory(dev) {
+        if (!this._accessoryAlertsEnabled || !this._priority)
+            return;
+
+        const devType = dev.type;
+        const icon = (dev.icon || '').toLowerCase();
+        const name = (dev.alias || dev.name || '').trim();
+        const nameLower = name.toLowerCase();
+
+        // Audio devices: HEADSET (32), HEADPHONES (64), OTHER_AUDIO (128) or audio icon or known audio names
+        const isAudioType = devType === 32 || devType === 64 || devType === 128 ||
+            icon.includes('audio') || icon.includes('headset') || icon.includes('headphones');
+        const isAudioName = /buds|airpods|freebuds|earfun|soundcore|tws|wireless|wh-|wf-|headphone|headset|iem/i.test(nameLower);
+
+        if (!isAudioType && !isAudioName)
+            return;
+
+        const addr = dev.address || name;
+        const now = GLib.get_monotonic_time();
+        const last = this._lastAlertTime.get(addr) || 0;
+        if ((now - last) < 4000000)
+            return;
+        this._lastAlertTime.set(addr, now);
+
+        this._priority.pushTransient({
+            kind: 'accessory',
+            weight: Weights.ACCESSORY,
+            coalesceKey: `accessory-bt-${addr}`,
+            title: name || 'Bluetooth Audio',
+            body: 'TWS Connected • Bluetooth Audio',
+            icon: new Gio.ThemedIcon({ name: 'audio-headset-symbolic' }),
+            iconName: 'audio-headset-symbolic',
+            iconColor: '#38bdf8',
+            durationMs: 3600,
+            onActivate: () => {
+                this._priority.expand('media');
+            },
+            onClick: () => {
+                this._priority.expand('media');
+            },
+        });
     }
 
     _initAudio() {
@@ -802,6 +877,13 @@ export class QuickActionsManager extends Signals.EventEmitter {
             try { this._btClient?.disconnect(id); } catch {}
         }
         this._btIds = [];
+
+        for (const { dev, sid } of this._btDeviceSigIds.values()) {
+            try { dev?.disconnect(sid); } catch {}
+        }
+        this._btDeviceSigIds.clear();
+        this._btConnectedAddresses.clear();
+        this._btBootstrapped = false;
         this._btClient = null;
 
         if (this._rfkillProxy && this._rfkillSigId) {
