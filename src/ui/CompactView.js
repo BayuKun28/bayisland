@@ -70,9 +70,10 @@ export function buildEqualizerWidget(barCount = 4, accentCss = '#93c5fd') {
  * Builds and updates IDLE_BAR, INTEGRATED_CLOCK, HOVER_PEEK, DROP_CATCH, AMBIENT_DOT, and COMPACT_PILL layouts.
  */
 export class CompactView {
-    constructor({ onExpand, onMediaToggle }) {
+    constructor({ onExpand, onMediaToggle, onToggleMinimizePersistent }) {
         this._onExpand = onExpand;
         this._onMediaToggle = onMediaToggle;
+        this._onToggleMinimizePersistent = onToggleMinimizePersistent;
         this._root = null;
         this._currentPrimary = null;
 
@@ -1045,7 +1046,7 @@ export class CompactView {
             reactive: true,
             can_focus: false,
         });
-        minBtn.connect('clicked', () => this._cb.onToggleMinimizePersistent?.());
+        minBtn.connect('clicked', () => this._onToggleMinimizePersistent?.());
         box.add_child(minBtn);
 
         return this._attachRoot(box);
