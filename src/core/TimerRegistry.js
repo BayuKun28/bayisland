@@ -8,23 +8,30 @@ export class TimerRegistry {
         this._sources = new Set();
     }
 
-    setTimeout(ms, callback) {
+    setTimeout(a, b) {
+        const ms = typeof a === 'number' ? a : (typeof b === 'number' ? b : 0);
+        const callback = typeof a === 'function' ? a : b;
         const delay = Math.max(0, Math.round(ms));
         let id = 0;
         id = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
             this._sources.delete(id);
-            callback();
+            if (typeof callback === 'function')
+                callback();
             return GLib.SOURCE_REMOVE;
         });
         this._sources.add(id);
         return id;
     }
 
-    setInterval(ms, callback) {
+    setInterval(a, b) {
+        const ms = typeof a === 'number' ? a : (typeof b === 'number' ? b : 16);
+        const callback = typeof a === 'function' ? a : b;
         const interval = Math.max(16, Math.round(ms));
         let id = 0;
         id = GLib.timeout_add(GLib.PRIORITY_DEFAULT, interval, () => {
-            const keep = callback();
+            let keep = true;
+            if (typeof callback === 'function')
+                keep = callback();
             if (keep === GLib.SOURCE_REMOVE || keep === false) {
                 this._sources.delete(id);
                 return GLib.SOURCE_REMOVE;

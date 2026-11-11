@@ -515,9 +515,9 @@ export class QuickActionsManager extends Signals.EventEmitter {
             );
             this._syncBluetooth();
             if (this._timers) {
-                this._timers.setTimeout(() => {
+                this._timers.setTimeout(1500, () => {
                     this._btBootstrapped = true;
-                }, 1500);
+                });
             } else {
                 this._btBootstrapped = true;
             }
@@ -605,10 +605,15 @@ export class QuickActionsManager extends Signals.EventEmitter {
 
         const addr = dev.address || name;
         const now = GLib.get_monotonic_time();
-        const last = this._lastAlertTime.get(addr) || 0;
+        const last = Math.max(
+            this._lastAlertTime.get(addr) || 0,
+            name ? (this._lastAlertTime.get(name) || 0) : 0
+        );
         if ((now - last) < 4000000)
             return;
         this._lastAlertTime.set(addr, now);
+        if (name)
+            this._lastAlertTime.set(name, now);
 
         this._priority.pushTransient({
             kind: 'accessory',
@@ -642,9 +647,9 @@ export class QuickActionsManager extends Signals.EventEmitter {
             );
             this._rebuildAudioDevices();
             if (this._timers) {
-                this._timers.setTimeout(() => {
+                this._timers.setTimeout(1500, () => {
                     this._bootstrapped = true;
-                }, 1500);
+                });
             } else {
                 this._bootstrapped = true;
             }
@@ -665,7 +670,12 @@ export class QuickActionsManager extends Signals.EventEmitter {
             if (uiDev) {
                 const id = uiDev.get_id();
                 this._outputs.set(id, uiDev);
-                this._knownOutputIds.add(id);
+                if (this._bootstrapped && !this._knownOutputIds.has(id)) {
+                    this._knownOutputIds.add(id);
+                    this._checkAndNotifyAccessory(uiDev);
+                } else {
+                    this._knownOutputIds.add(id);
+                }
             }
         }
         this._bindDefaultSink();
@@ -702,8 +712,10 @@ export class QuickActionsManager extends Signals.EventEmitter {
         this._activeOutputId = id;
         this._syncAudioDeviceList();
 
-        if (prevId && prevId !== id)
+        if (prevId && prevId !== id) {
             this._lastAlertTime.delete(prevId);
+            this._lastAlertTime.delete(id);
+        }
 
         if (this._bootstrapped && id !== prevId) {
             const dev = this._mixer?.lookup_output_id(id);
@@ -724,12 +736,23 @@ export class QuickActionsManager extends Signals.EventEmitter {
         if (!classification)
             return;
 
+        const origin = (dev.get_origin?.() || '').trim();
+        const desc = (dev.get_description?.() || '').trim();
+
         const now = GLib.get_monotonic_time();
-        const last = this._lastAlertTime.get(id) || 0;
-        // 4 seconds cooldown per device ID
+        const last = Math.max(
+            this._lastAlertTime.get(id) || 0,
+            origin ? (this._lastAlertTime.get(origin) || 0) : 0,
+            desc ? (this._lastAlertTime.get(desc) || 0) : 0
+        );
+        // 4 seconds cooldown per device ID/name
         if ((now - last) < 4000000)
             return;
         this._lastAlertTime.set(id, now);
+        if (origin)
+            this._lastAlertTime.set(origin, now);
+        if (desc)
+            this._lastAlertTime.set(desc, now);
 
         const displayName = getDeviceDisplayName(dev);
         const title = (classification.type === 'iem' && (displayName === 'Headphones' || displayName === 'Headphones (Built-in Audio)'))
@@ -768,8 +791,15 @@ export class QuickActionsManager extends Signals.EventEmitter {
                 this._defaultSink.connect('notify::is-muted', () => this._syncAudioStreams())
             );
             const activeDev = this._mixer?.lookup_device_from_stream?.(this._defaultSink);
-            if (activeDev)
-                this._activeOutputId = activeDev.get_id();
+            if (activeDev) {
+                const prevId = this._activeOutputId;
+                const newId = activeDev.get_id();
+                this._activeOutputId = newId;
+                if (this._bootstrapped && prevId !== null && prevId !== newId) {
+                    this._lastAlertTime.delete(newId);
+                    this._checkAndNotifyAccessory(activeDev);
+                }
+            }
         }
         this._syncAudioStreams();
         this._syncAudioDeviceList();
