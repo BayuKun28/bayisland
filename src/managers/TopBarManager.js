@@ -67,6 +67,8 @@ export class TopBarManager extends Signals.EventEmitter {
         this._overlapDetected = false;
         this._overlapTimeoutId = 0;
         this._overlapNeedsRecheck = false;
+        this._extReconcileTimerId = 0;
+        this._inHidePanel = false;
         this._pointerWatchId = 0;
         this._blockerMenu = null;
         this._blockerMenuSigId = 0;
@@ -512,11 +514,38 @@ export class TopBarManager extends Signals.EventEmitter {
         reg(Main.panel, 'leave-event', () => {
             this._handleMenusOrPointerLeave();
         });
+        reg(Main.layoutManager, 'startup-complete', () => {
+            const mon = Main.layoutManager.primaryMonitor ?? { y: 0 };
+            this._baseY = mon.y;
+            this._syncPressureBarrier();
+            this._reconcileAutohideVisibility('startup-complete');
+        });
         reg(Main.layoutManager, 'monitors-changed', () => {
             const mon = Main.layoutManager.primaryMonitor ?? { y: 0 };
             this._baseY = mon.y;
             this._syncPressureBarrier();
-            this._scheduleOverlapCheck();
+            if (this._autohideMode === 'intellihide')
+                this._scheduleOverlapCheck();
+            else
+                this._reconcileAutohideVisibility('monitors-changed');
+        });
+        reg(panelBox, 'notify::visible', () => {
+            if (!this._autohideActive || this._inShowPanel || this._inHidePanel || this._panelVisibleAnim)
+                return;
+            if (this._panelHidden && panelBox.visible && !this._extReconcileTimerId) {
+                this._extReconcileTimerId = this._timers.setTimeout(30, () => {
+                    this._extReconcileTimerId = 0;
+                    if (this._autohideActive && this._panelHidden && panelBox.visible)
+                        this._reconcileAutohideVisibility('external-panel-show');
+                });
+            }
+        });
+        reg(panelBox, 'notify::height', () => {
+            if (!this._autohideActive || !this._panelHidden || this._panelVisibleAnim || panelBox.visible)
+                return;
+            const targetY = this._baseY - Math.max(24, panelBox.height) - 2;
+            if (Math.abs((panelBox.y ?? 0) - targetY) > 0.5)
+                panelBox.y = targetY;
         });
         reg(global.window_manager, 'switch-workspace', () => {
             this._scheduleOverlapCheck();
@@ -574,6 +603,10 @@ export class TopBarManager extends Signals.EventEmitter {
         if (this._overlapTimeoutId) {
             this._timers.clear(this._overlapTimeoutId);
             this._overlapTimeoutId = 0;
+        }
+        if (this._extReconcileTimerId) {
+            this._timers.clear(this._extReconcileTimerId);
+            this._extReconcileTimerId = 0;
         }
         this._stopWatchingPointer();
         this._releaseBlockerMenu();
@@ -1080,41 +1113,50 @@ export class TopBarManager extends Signals.EventEmitter {
         if (!panelBox)
             return;
 
-        if (this._panelHidden && !this._panelVisibleAnim && !panelBox.visible)
+        const targetY = this._baseY - Math.max(24, panelBox.height) - 2;
+        if (this._panelHidden && !this._panelVisibleAnim && !panelBox.visible &&
+            Math.abs((panelBox.y ?? 0) - targetY) <= 0.5)
             return;
 
-        this._revealHoldUntilLeave = false;
-        this._stopWatchingPointer();
-        this._panelHidden = true;
-        panelBox.remove_all_transitions();
-
-        const targetY = this._baseY - Math.max(24, panelBox.height);
-        if (animMs <= 0 || Math.abs((panelBox.y ?? 0) - targetY) <= 0.5) {
-            this._panelVisibleAnim = false;
-            panelBox.y = targetY;
-            panelBox.hide();
-            this._setUnredirectDisabled(false);
-            this._syncDateMenuSlot();
-            this.emit('panel-state-changed');
+        if (this._inHidePanel)
             return;
-        }
+        this._inHidePanel = true;
+        try {
+            this._revealHoldUntilLeave = false;
+            this._stopWatchingPointer();
+            this._panelHidden = true;
+            panelBox.remove_all_transitions();
 
-        this._panelVisibleAnim = true;
-        panelBox.ease({
-            y: targetY,
-            duration: animMs,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            onComplete: () => {
+            if (animMs <= 0 || Math.abs((panelBox.y ?? 0) - targetY) <= 0.5) {
                 this._panelVisibleAnim = false;
-                if (this._panelHidden) {
-                    panelBox.hide();
-                    this._setUnredirectDisabled(false);
-                }
+                panelBox.y = targetY;
+                panelBox.hide();
+                this._setUnredirectDisabled(false);
                 this._syncDateMenuSlot();
                 this.emit('panel-state-changed');
-            },
-        });
-        this.emit('panel-state-changed');
+                return;
+            }
+
+            this._panelVisibleAnim = true;
+            panelBox.ease({
+                y: targetY,
+                duration: animMs,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                onComplete: () => {
+                    this._panelVisibleAnim = false;
+                    if (this._panelHidden) {
+                        panelBox.y = targetY;
+                        panelBox.hide();
+                        this._setUnredirectDisabled(false);
+                    }
+                    this._syncDateMenuSlot();
+                    this.emit('panel-state-changed');
+                },
+            });
+            this.emit('panel-state-changed');
+        } finally {
+            this._inHidePanel = false;
+        }
     }
 
     destroy() {

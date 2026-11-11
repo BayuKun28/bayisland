@@ -218,6 +218,33 @@ export default class BayIslandPreferences extends ExtensionPreferences {
             icon_name: 'preferences-desktop-appearance-symbolic',
         });
 
+        // 0. Session Restart Notice (shown prominently at top when active Shell RAM lags behind disk)
+        const noticeGroup = new Adw.PreferencesGroup({
+            visible: false,
+        });
+        const reloadNoticeRow = new Adw.ActionRow({
+            title: 'Log Out and Back In Required for Top Bar Changes',
+            subtitle: 'Active GNOME Shell still runs an older BayIsland build in Wayland RAM. Saved Top Bar Merge and Autohide settings will activate immediately after logging out and back in.',
+        });
+        reloadNoticeRow.add_prefix(new Gtk.Image({ icon_name: 'dialog-warning-symbolic' }));
+        if (GLib.find_program_in_path('gnome-session-quit')) {
+            const logoutBtn = new Gtk.Button({
+                label: 'Log Out...',
+                valign: Gtk.Align.CENTER,
+                css_classes: ['suggested-action'],
+            });
+            logoutBtn.connect('clicked', () => {
+                try {
+                    Gio.Subprocess.new(['gnome-session-quit', '--logout'], Gio.SubprocessFlags.NONE);
+                } catch {
+                    window.add_toast?.(new Adw.Toast({ title: 'Log out from Ubuntu power menu to reload BayIsland.' }));
+                }
+            });
+            reloadNoticeRow.add_suffix(logoutBtn);
+        }
+        noticeGroup.add(reloadNoticeRow);
+        page.add(noticeGroup);
+
         // 1. Top Bar Integration & Built-in Autohide
         const topBarGroup = new Adw.PreferencesGroup({
             title: 'Top Bar Integration and Autohide',
@@ -313,14 +340,6 @@ export default class BayIslandPreferences extends ExtensionPreferences {
         conflictRow.add_suffix(disableExtBtn);
         topBarGroup.add(conflictRow);
 
-        const reloadNoticeRow = new Adw.ActionRow({
-            title: 'Session Restart Required for Top Bar Merge',
-            subtitle: 'Running GNOME Shell still has an older BayIsland build loaded in RAM. Log out and log back in once on Wayland so Top Bar Merge and Autohide take effect.',
-            visible: false,
-        });
-        reloadNoticeRow.add_prefix(new Gtk.Image({ icon_name: 'system-reboot-symbolic' }));
-        topBarGroup.add(reloadNoticeRow);
-
         const probeCancel = new Gio.Cancellable();
         cleanups.push(() => probeCancel.cancel());
         try {
@@ -344,7 +363,7 @@ export default class BayIslandPreferences extends ExtensionPreferences {
                             return;
                         const stateObj = JSON.parse(jsonStr);
                         if (stateObj && !Object.prototype.hasOwnProperty.call(stateObj, 'topbarIntegrationMode'))
-                            reloadNoticeRow.visible = true;
+                            noticeGroup.visible = true;
                     } catch {
                         // Older/disabled shell or non-JSON response
                     }
