@@ -67,7 +67,7 @@ export function buildEqualizerWidget(barCount = 4, accentCss = '#93c5fd') {
 }
 
 /**
- * Builds and updates IDLE_BAR, HOVER_PEEK, DROP_CATCH, AMBIENT_DOT, and COMPACT_PILL layouts.
+ * Builds and updates IDLE_BAR, INTEGRATED_CLOCK, HOVER_PEEK, DROP_CATCH, AMBIENT_DOT, and COMPACT_PILL layouts.
  */
 export class CompactView {
     constructor({ onExpand, onMediaToggle }) {
@@ -80,6 +80,11 @@ export class CompactView {
         this._idleHitHeight = 18;
         this._idleAlignStart = false;
         this._edgeFlush = false;
+        this._integratedHeight = 28;
+        this._integratedMaxWidth = 360;
+        this._integratedInSlot = false;
+        this._integratedFullLayout = true;
+        this._integratedPreset = 'hover-pill';
 
         this._titleLabel = null;
         this._timerLabel = null;
@@ -94,13 +99,30 @@ export class CompactView {
         this._peekBadgeLabel = null;
         this._peekDndIcon = null;
         this._peekProfileIcon = null;
+        this._integratedDot = null;
         this._dropIcon = null;
         this._dropTitleLabel = null;
+    }
+
+    setIntegratedMetrics({ height = 28, maxWidth = 360, inSlot = false } = {}) {
+        const nextH = Math.max(24, Math.min(36, Math.round(height)));
+        const nextMaxW = Math.max(150, Math.round(maxWidth));
+        const nextInSlot = Boolean(inSlot);
+        const changed =
+            nextH !== this._integratedHeight ||
+            nextMaxW !== this._integratedMaxWidth ||
+            nextInSlot !== this._integratedInSlot;
+        this._integratedHeight = nextH;
+        this._integratedMaxWidth = nextMaxW;
+        this._integratedInSlot = nextInSlot;
+        return changed;
     }
 
     render(model, palette) {
         if (model.state === IslandState.IDLE_BAR)
             return this._renderIdleBar(model, palette);
+        if (model.state === IslandState.INTEGRATED_CLOCK)
+            return this._renderIntegratedClock(model, palette);
         if (model.state === IslandState.HOVER_PEEK)
             return this._renderHoverPeek(model, palette);
         if (model.state === IslandState.DROP_CATCH)
@@ -116,6 +138,49 @@ export class CompactView {
         return this._renderMedia(model.persistent.media, palette);
     }
 
+    _useIntegratedFullLayout(model) {
+        if (!model || model.state !== IslandState.INTEGRATED_CLOCK)
+            return false;
+        return model.preset === 'hover-pill' || (Boolean(model.hovered) && Boolean(model.expandOnHover));
+    }
+
+    _syncStatusBadgesAndClock(model, { useCompactBattery = false } = {}) {
+        const meta = model.meta ?? {};
+        const unread = meta.unreadNotifs ?? 0;
+        const wantDndOnly = unread === 0 && Boolean(meta.dnd);
+        const dateStr = meta.dateText || getPeekDateString();
+        const clockStr = meta.clockText || getPeekClockString();
+
+        if (this._peekDateLabel)
+            this._peekDateLabel.text = dateStr;
+        if (this._peekClockLabel)
+            this._peekClockLabel.text = clockStr;
+
+        if (this._peekProfileIcon)
+            this._peekProfileIcon.icon_name = getProfileIconName(meta.powerProfile);
+
+        if (this._peekBatRing && this._peekBatNumLabel) {
+            const pct = Math.max(0, Math.min(100, Math.round(meta.powerPct ?? 0)));
+            const ringColor = (meta.onBattery && pct <= 20)
+                ? '#ef4444'
+                : (meta.charging ? '#4ade80' : '#34d399');
+            const compactFont = this._integratedHeight <= 25 ? '6px' : '7px';
+            this._peekBatRing.setValues({ fraction: pct / 100, colorCss: ringColor });
+            this._peekBatNumLabel.text = String(pct);
+            this._peekBatNumLabel.style = (meta.onBattery && pct <= 20)
+                ? `color: #fca5a5;${useCompactBattery ? ` font-size: ${compactFont};` : ''}`
+                : `color: #f8fafc;${useCompactBattery ? ` font-size: ${compactFont};` : ''}`;
+        }
+
+        if (this._peekBadgeLabel && unread > 0)
+            this._peekBadgeLabel.text = String(unread);
+
+        if (this._integratedDot)
+            this._integratedDot.visible = unread > 0;
+
+        return { unread, wantDndOnly };
+    }
+
     updateInPlace(model) {
         if (!this._root)
             return false;
@@ -123,6 +188,28 @@ export class CompactView {
         if (model.state === IslandState.IDLE_BAR && this._currentPrimary === 'idle-bar') {
             if (this._idleUnreadDot)
                 this._idleUnreadDot.visible = (model.meta?.unreadNotifs ?? 0) > 0;
+            return true;
+        }
+
+        if (model.state === IslandState.INTEGRATED_CLOCK && this._currentPrimary === 'integrated-clock') {
+            const wantFull = this._useIntegratedFullLayout(model);
+            if (wantFull !== this._integratedFullLayout || (model.preset ?? 'hover-pill') !== this._integratedPreset)
+                return false;
+
+            const meta = model.meta ?? {};
+            const unread = meta.unreadNotifs ?? 0;
+            const wantDndOnly = unread === 0 && Boolean(meta.dnd);
+
+            if (wantFull) {
+                if ((unread > 0) !== Boolean(this._peekBadge))
+                    return false;
+                if (wantDndOnly !== Boolean(this._peekDndIcon))
+                    return false;
+            } else if (wantDndOnly !== Boolean(this._peekDndIcon)) {
+                return false;
+            }
+
+            this._syncStatusBadgesAndClock(model, { useCompactBattery: true });
             return true;
         }
 
@@ -134,25 +221,7 @@ export class CompactView {
                 return false;
             if (wantDndOnly !== Boolean(this._peekDndIcon))
                 return false;
-            if (this._peekDateLabel)
-                this._peekDateLabel.text = getPeekDateString();
-            if (this._peekClockLabel)
-                this._peekClockLabel.text = getPeekClockString();
-            if (this._peekProfileIcon)
-                this._peekProfileIcon.icon_name = getProfileIconName(meta.powerProfile);
-            if (this._peekBatRing && this._peekBatNumLabel) {
-                const pct = Math.max(0, Math.min(100, Math.round(meta.powerPct ?? 0)));
-                const ringColor = (meta.onBattery && pct <= 20)
-                    ? '#ef4444'
-                    : (meta.charging ? '#4ade80' : '#34d399');
-                this._peekBatRing.setValues({ fraction: pct / 100, colorCss: ringColor });
-                this._peekBatNumLabel.text = String(pct);
-                this._peekBatNumLabel.style = (meta.onBattery && pct <= 20)
-                    ? 'color: #fca5a5;'
-                    : 'color: #f8fafc;';
-            }
-            if (this._peekBadgeLabel && unread > 0)
-                this._peekBadgeLabel.text = String(unread);
+            this._syncStatusBadgesAndClock(model, { useCompactBattery: false });
             return true;
         }
 
@@ -216,6 +285,23 @@ export class CompactView {
     getPreferredSize(model) {
         if (model.state === IslandState.IDLE_BAR)
             return { width: 172, height: this._idleHitHeight };
+        if (model.state === IslandState.INTEGRATED_CLOCK) {
+            const meta = model.meta ?? {};
+            const unread = meta.unreadNotifs ?? 0;
+            const dnd = Boolean(meta.dnd);
+            const clockStr = meta.clockText || getPeekClockString();
+            const extraClockPx = Math.max(0, clockStr.length - 5) * 6;
+            const full = this._useIntegratedFullLayout(model);
+            let w;
+            if (full)
+                w = (unread > 0 ? 258 : (dnd ? 238 : 226)) + extraClockPx;
+            else
+                w = (unread > 0 || dnd ? 168 : 148) + extraClockPx;
+            return {
+                width: Math.min(this._integratedMaxWidth, w),
+                height: this._integratedHeight,
+            };
+        }
         if (model.state === IslandState.HOVER_PEEK) {
             const unread = model.meta?.unreadNotifs ?? 0;
             const dnd = Boolean(model.meta?.dnd);
@@ -225,16 +311,17 @@ export class CompactView {
         if (model.state === IslandState.DROP_CATCH)
             return { width: 320, height: 68 };
 
+        const slotH = this._integratedInSlot ? this._integratedHeight : null;
         if (model.primary === 'idle')
-            return { width: 84, height: 24 };
+            return { width: 84, height: Math.min(24, slotH ?? 24) };
         if (model.primary === 'privacy') {
             const p = model.persistent.privacy;
             const dual = p.camera && p.mic;
-            return { width: dual ? 136 : 112, height: 30 };
+            return { width: dual ? 136 : 112, height: slotH ? Math.min(30, slotH) : 30 };
         }
         if (model.primary === 'timer')
-            return { width: 142, height: 36 };
-        return { width: 224, height: 36 };
+            return { width: 142, height: slotH ? Math.min(34, slotH) : 36 };
+        return { width: 224, height: slotH ? Math.min(34, slotH) : 36 };
     }
 
     _attachRoot(root) {
@@ -267,6 +354,7 @@ export class CompactView {
         this._peekBadgeLabel = null;
         this._peekDndIcon = null;
         this._peekProfileIcon = null;
+        this._integratedDot = null;
         this._dropIcon = null;
         this._dropTitleLabel = null;
         this._dropSubLabel = null;
@@ -302,6 +390,193 @@ export class CompactView {
         wrap.add_child(this._idleUnreadDot);
 
         return this._attachRoot(wrap);
+    }
+
+    _renderIntegratedClock(model, palette) {
+        this._resetRefs();
+        this._currentPrimary = 'integrated-clock';
+        this._lastPalette = palette;
+        const meta = model.meta ?? {};
+        const preset = model.preset ?? 'hover-pill';
+        const fullLayout = this._useIntegratedFullLayout(model);
+        this._integratedPreset = preset;
+        this._integratedFullLayout = fullLayout;
+
+        const dateStr = meta.dateText || getPeekDateString();
+        const clockStr = meta.clockText || getPeekClockString();
+        const showDate = this._integratedMaxWidth >= 204;
+
+        if (fullLayout) {
+            const box = new St.BoxLayout({
+                style_class: 'bayisland-peek-box bayisland-integrated-clock-box',
+                x_expand: true,
+                y_expand: true,
+                height: this._integratedHeight,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+
+            const pct = Math.max(0, Math.min(100, Math.round(meta.powerPct ?? 0)));
+            const ringSize = Math.max(18, Math.min(22, this._integratedHeight - 6));
+            const ringFont = ringSize <= 20 ? '6px' : '7px';
+            const ringColor = (meta.onBattery && pct <= 20)
+                ? '#ef4444'
+                : (meta.charging ? '#4ade80' : '#34d399');
+
+            this._peekBatNumLabel = new St.Label({
+                text: String(pct),
+                style_class: 'bayisland-peek-ring-num',
+                style: (meta.onBattery && pct <= 20)
+                    ? `color: #fca5a5; font-size: ${ringFont};`
+                    : `color: #f8fafc; font-size: ${ringFont};`,
+            });
+            this._peekBatRing = createRingGauge({
+                size: ringSize,
+                strokeWidth: 2.2,
+                fraction: pct / 100,
+                colorCss: ringColor,
+                trackCss: 'rgba(255, 255, 255, 0.14)',
+                centerChild: this._peekBatNumLabel,
+            });
+            box.add_child(this._peekBatRing.actor);
+
+            const centerGroup = new St.BoxLayout({
+                style_class: 'bayisland-peek-center',
+                x_expand: true,
+                x_align: Clutter.ActorAlign.CENTER,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            if (showDate) {
+                this._peekDateLabel = new St.Label({
+                    text: dateStr,
+                    style_class: 'bayisland-peek-date',
+                    y_align: Clutter.ActorAlign.CENTER,
+                });
+                centerGroup.add_child(this._peekDateLabel);
+            }
+            this._peekClockLabel = new St.Label({
+                text: clockStr,
+                style_class: 'bayisland-peek-clock',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            centerGroup.add_child(this._peekClockLabel);
+            box.add_child(centerGroup);
+
+            const rightGroup = new St.BoxLayout({
+                style_class: 'bayisland-peek-right',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+
+            this._peekProfileIcon = new St.Icon({
+                icon_name: getProfileIconName(meta.powerProfile),
+                icon_size: 12,
+                style: `color: ${palette?.accentCss ?? '#93c5fd'};`,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            rightGroup.add_child(this._peekProfileIcon);
+
+            const unread = meta.unreadNotifs ?? 0;
+            if (unread > 0) {
+                const acc = palette?.accentCss || '#93c5fd';
+                const fg = palette?.accentFgCss || '#090d16';
+                this._peekBadge = new St.BoxLayout({
+                    style_class: 'bayisland-peek-badge',
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: `spacing: 3px; background-color: ${acc}; color: ${fg};`,
+                });
+                this._peekBadge.add_child(new St.Icon({
+                    icon_name: meta.dnd ? 'notifications-disabled-symbolic' : 'preferences-system-notifications-symbolic',
+                    icon_size: 10,
+                    style: `color: ${fg};`,
+                }));
+                this._peekBadgeLabel = new St.Label({
+                    text: String(unread),
+                    style: `color: ${fg}; font-weight: 700;`,
+                });
+                this._peekBadge.add_child(this._peekBadgeLabel);
+                rightGroup.add_child(this._peekBadge);
+            } else if (meta.dnd) {
+                this._peekDndIcon = new St.Icon({
+                    icon_name: 'notifications-disabled-symbolic',
+                    icon_size: 12,
+                    style: 'color: #fbbf24;',
+                    y_align: Clutter.ActorAlign.CENTER,
+                });
+                rightGroup.add_child(this._peekDndIcon);
+            }
+
+            rightGroup.add_child(new St.Icon({
+                icon_name: 'pan-down-symbolic',
+                icon_size: 12,
+                style_class: 'bayisland-peek-chevron',
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+            box.add_child(rightGroup);
+            return this._attachRoot(box);
+        }
+
+        // Minimal Clock or Handle+Clock idle layout
+        const row = new St.BoxLayout({
+            style_class: 'bayisland-integrated-minimal-box',
+            x_expand: true,
+            y_expand: true,
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
+        const unread = meta.unreadNotifs ?? 0;
+        if (meta.dnd) {
+            this._peekDndIcon = new St.Icon({
+                icon_name: 'notifications-disabled-symbolic',
+                icon_size: 11,
+                style: 'color: #fbbf24;',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            row.add_child(this._peekDndIcon);
+        }
+
+        this._peekDateLabel = new St.Label({
+            text: dateStr,
+            style_class: 'bayisland-peek-date',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._peekClockLabel = new St.Label({
+            text: clockStr,
+            style_class: 'bayisland-peek-clock',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        row.add_child(this._peekDateLabel);
+        row.add_child(this._peekClockLabel);
+
+        this._integratedDot = new St.Widget({
+            style_class: 'bayisland-idle-handle-dot',
+            y_align: Clutter.ActorAlign.CENTER,
+            ...(palette?.accentCss ? { style: `background-color: ${palette.accentCss};` } : {}),
+            visible: unread > 0,
+        });
+        row.add_child(this._integratedDot);
+
+        if (preset === 'handle-clock') {
+            const stack = new St.Widget({
+                style_class: 'bayisland-integrated-handle-wrap',
+                layout_manager: new Clutter.BinLayout(),
+                x_expand: true,
+                y_expand: true,
+                height: this._integratedHeight,
+            });
+            stack.add_child(row);
+            stack.add_child(new St.Widget({
+                style_class: 'bayisland-integrated-handle-accent',
+                ...(palette?.accentCss ? { style: `background-color: ${palette.accentCss};` } : {}),
+                x_align: Clutter.ActorAlign.CENTER,
+                y_align: Clutter.ActorAlign.END,
+                x_expand: true,
+                y_expand: true,
+            }));
+            return this._attachRoot(stack);
+        }
+
+        row.height = this._integratedHeight;
+        return this._attachRoot(row);
     }
 
     _renderHoverPeek(model, palette) {
@@ -350,12 +625,12 @@ export class CompactView {
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._peekDateLabel = new St.Label({
-            text: getPeekDateString(),
+            text: meta.dateText || getPeekDateString(),
             style_class: 'bayisland-peek-date',
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._peekClockLabel = new St.Label({
-            text: getPeekClockString(),
+            text: meta.clockText || getPeekClockString(),
             style_class: 'bayisland-peek-clock',
             y_align: Clutter.ActorAlign.CENTER,
         });

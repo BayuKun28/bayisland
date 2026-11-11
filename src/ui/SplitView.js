@@ -22,10 +22,22 @@ export class SplitView {
         this._timerLabel = null;
         this._mediaLabel = null;
         this._eqBars = [];
+        this._integratedHeight = 28;
+        this._integratedMaxWidth = 360;
+        this._integratedInSlot = false;
+    }
+
+    setIntegratedMetrics({ height = 28, maxWidth = 360, inSlot = false } = {}) {
+        this._integratedHeight = Math.max(24, Math.min(34, Math.round(height)));
+        this._integratedMaxWidth = Math.max(180, Math.round(maxWidth));
+        this._integratedInSlot = Boolean(inSlot);
     }
 
     getPreferredSize() {
-        return { width: 304, height: 36 };
+        return {
+            width: this._integratedInSlot ? Math.min(this._integratedMaxWidth, 304) : 304,
+            height: this._integratedInSlot ? Math.min(34, this._integratedHeight) : 36,
+        };
     }
 
     getEqBars() {

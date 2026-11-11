@@ -4,6 +4,7 @@ import * as Signals from 'resource:///org/gnome/shell/misc/signals.js';
 export const IslandState = {
     HIDDEN: 'HIDDEN',
     IDLE_BAR: 'IDLE_BAR',
+    INTEGRATED_CLOCK: 'INTEGRATED_CLOCK',
     HOVER_PEEK: 'HOVER_PEEK',
     DROP_CATCH: 'DROP_CATCH',
     AMBIENT_DOT: 'AMBIENT_DOT',
@@ -117,6 +118,8 @@ export class PriorityManager extends Signals.EventEmitter {
             powerProfile: 'balanced',
             dnd: false,
             dragHighlight: false,
+            clockText: '',
+            dateText: '',
         };
 
         this._transient = null;
@@ -139,6 +142,8 @@ export class PriorityManager extends Signals.EventEmitter {
             idleHoverPeek: true,
             hideInFullscreen: false,
             topbarCollisionMode: 'drop-below',
+            topbarIntegrationMode: 'merged-pill',
+            mergedPillPreset: 'hover-pill',
             expandedDefaultTab: 'auto',
             tabOrder: [...DEFAULT_TAB_ORDER],
         };
@@ -170,6 +175,13 @@ export class PriorityManager extends Signals.EventEmitter {
             next.tabOrder = normalizeTabOrder(next.tabOrder);
         if (next.expandedDefaultTab !== undefined && next.expandedDefaultTab !== 'auto')
             next.expandedDefaultTab = normalizeTab(next.expandedDefaultTab) ?? 'home';
+        if (next.topbarIntegrationMode !== undefined)
+            next.topbarIntegrationMode = next.topbarIntegrationMode === 'separate' ? 'separate' : 'merged-pill';
+        if (next.mergedPillPreset !== undefined) {
+            next.mergedPillPreset = ['hover-pill', 'minimal-clock', 'handle-clock'].includes(next.mergedPillPreset)
+                ? next.mergedPillPreset
+                : 'hover-pill';
+        }
         Object.assign(this._options, next);
         if (!this._options.idleHandleEnabled)
             this._hoverPeek = false;
@@ -276,14 +288,21 @@ export class PriorityManager extends Signals.EventEmitter {
     }
 
     setHovered(hovered) {
-        if (this._hovered === hovered)
+        const nextHovered = Boolean(hovered);
+        if (this._hovered === nextHovered)
             return;
-        this._hovered = hovered;
+        this._hovered = nextHovered;
+
+        if (this._currentModel.state === IslandState.INTEGRATED_CLOCK) {
+            const preset = this._options.mergedPillPreset;
+            const structuralHover = (preset === 'minimal-clock' || preset === 'handle-clock') && this._options.idleHoverPeek;
+            this._reconcile(!structuralHover);
+        }
 
         if (!this._transient || this._transient.sticky)
             return;
 
-        if (hovered) {
+        if (nextHovered) {
             if (this._transientTimerId) {
                 const elapsedMs = Math.floor((GLib.get_monotonic_time() - this._transientStartedUs) / 1000);
                 this._transientRemainingMs = Math.max(1200, this._transientRemainingMs - elapsedMs);
@@ -398,7 +417,15 @@ export class PriorityManager extends Signals.EventEmitter {
 
     _computeModel() {
         const { media, timer, privacy } = this._persistent;
-        const { hideInFullscreen, showIdlePill, idleHandleEnabled, topbarCollisionMode } = this._options;
+        const {
+            hideInFullscreen,
+            showIdlePill,
+            idleHandleEnabled,
+            idleHoverPeek,
+            topbarCollisionMode,
+            topbarIntegrationMode,
+            mergedPillPreset,
+        } = this._options;
         const { panelVisible, inFullscreen } = this._environment;
 
         if (hideInFullscreen && inFullscreen) {
@@ -493,6 +520,18 @@ export class PriorityManager extends Signals.EventEmitter {
             };
         }
 
+        if (topbarIntegrationMode === 'merged-pill' && panelVisible) {
+            return {
+                state: IslandState.INTEGRATED_CLOCK,
+                primary: 'integrated-clock',
+                preset: mergedPillPreset ?? 'hover-pill',
+                hovered: this._hovered,
+                expandOnHover: Boolean(idleHoverPeek),
+                persistent: this._persistent,
+                meta: this._meta,
+            };
+        }
+
         if (topbarCollisionMode === 'hide-idle' && panelVisible) {
             return {
                 state: IslandState.HIDDEN,
@@ -544,10 +583,17 @@ export class PriorityManager extends Signals.EventEmitter {
 
         const orderA = Array.isArray(prev.tabOrder) ? prev.tabOrder.join(',') : '';
         const orderB = Array.isArray(next.tabOrder) ? next.tabOrder.join(',') : '';
+        const hoverStructDiff =
+            next.state === IslandState.INTEGRATED_CLOCK &&
+            next.preset !== 'hover-pill' &&
+            next.expandOnHover &&
+            prev.hovered !== next.hovered;
         const sameStructure =
             inPlaceHint &&
             prev.state === next.state &&
             prev.primary === next.primary &&
+            prev.preset === next.preset &&
+            !hoverStructDiff &&
             prev.left === next.left &&
             prev.right === next.right &&
             prev.tab === next.tab &&

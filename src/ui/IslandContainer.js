@@ -144,14 +144,17 @@ class BayIslandViewport extends St.Widget {
  *   with seamless pointer handoff to GTK4 dnd-bridge.js inside the Shelf tab.
  */
 export class IslandContainer {
-    constructor({ signals, timers, priority, callbacks }) {
+    constructor({ signals, timers, priority, topBar = null, callbacks }) {
         this._signals = signals;
         this._timers = timers;
         this._priority = priority;
+        this._topBar = topBar;
         this._cb = callbacks;
 
         this._pillStyle = 'floating';
         this._collisionMode = 'drop-below';
+        this._topbarIntegrationMode = 'merged-pill';
+        this._mergedClockRightClickGnome = true;
         this._topMargin = 6;
         this._idleHoverDwellMs = 160;
         this._palette = null;
@@ -252,6 +255,8 @@ export class IslandContainer {
                 } : null,
                 unredirectDisabled: this._unredirectDisabled,
                 topOrderOk: shellAlive ? this._isShellTopOrderOk() : false,
+                topbarIntegrationMode: this._topbarIntegrationMode,
+                clockSlotClaimed: Boolean(this._topBar?._slotClaimed),
             };
         });
         this._syncEnvironment();
@@ -330,9 +335,17 @@ export class IslandContainer {
                 return Clutter.EVENT_STOP;
             }
 
-            if (model.state === IslandState.IDLE_BAR || model.state === IslandState.HOVER_PEEK) {
+            if (model.state === IslandState.IDLE_BAR ||
+                model.state === IslandState.HOVER_PEEK ||
+                model.state === IslandState.INTEGRATED_CLOCK) {
                 if (btn === Clutter.BUTTON_PRIMARY) {
                     this._priority.expand();
+                    return Clutter.EVENT_STOP;
+                }
+                if (model.state === IslandState.INTEGRATED_CLOCK &&
+                    btn === Clutter.BUTTON_SECONDARY &&
+                    this._mergedClockRightClickGnome) {
+                    this._topBar?.toggleGnomeCalendar();
                     return Clutter.EVENT_STOP;
                 }
                 return Clutter.EVENT_PROPAGATE;
@@ -360,6 +373,7 @@ export class IslandContainer {
             const model = this._priority.getModel();
             if (model.state !== IslandState.COMPACT_PILL &&
                 model.state !== IslandState.HOVER_PEEK &&
+                model.state !== IslandState.INTEGRATED_CLOCK &&
                 model.state !== IslandState.SPLIT_PILL)
                 return Clutter.EVENT_PROPAGATE;
 
@@ -380,6 +394,24 @@ export class IslandContainer {
         this._signals.connect(panelBox, 'notify::y', () => this._onEnvironmentChanged());
         this._signals.connect(panelBox, 'notify::translation-y', () => this._onEnvironmentChanged());
         this._signals.connect(panelBox, 'notify::height', () => this._onEnvironmentChanged());
+        if (Main.panel) {
+            this._signals.connect(Main.panel, 'style-changed', () => {
+                if (!this._destroying && this._topbarIntegrationMode === 'merged-pill')
+                    this._repositionCurrent();
+            });
+        }
+        if (Main.panel?._leftBox) {
+            this._signals.connect(Main.panel._leftBox, 'notify::width', () => {
+                if (!this._destroying && this._topbarIntegrationMode === 'merged-pill')
+                    this._repositionCurrent();
+            });
+        }
+        if (Main.panel?._rightBox) {
+            this._signals.connect(Main.panel._rightBox, 'notify::width', () => {
+                if (!this._destroying && this._topbarIntegrationMode === 'merged-pill')
+                    this._repositionCurrent();
+            });
+        }
         this._signals.connect(Main.overview, 'showing', () => this._onEnvironmentChanged());
         this._signals.connect(Main.overview, 'hiding', () => this._onEnvironmentChanged());
         this._signals.connect(Main.layoutManager, 'monitors-changed', () => this._onEnvironmentChanged());
@@ -665,19 +697,31 @@ export class IslandContainer {
         // GrabHelper keeps compositor modal active; no separate Main.popModal needed
     }
 
-    setAppearance({ pillStyle, collisionMode, topMargin, idleHoverDwellMs }) {
+    setAppearance({
+        pillStyle,
+        collisionMode,
+        topbarIntegrationMode,
+        mergedClockRightClickGnome,
+        topMargin,
+        idleHoverDwellMs,
+    }) {
         if (this._destroying || !this._shell)
             return;
         if (pillStyle !== undefined)
             this._pillStyle = pillStyle;
         if (collisionMode !== undefined)
             this._collisionMode = collisionMode;
+        if (topbarIntegrationMode !== undefined)
+            this._topbarIntegrationMode = topbarIntegrationMode === 'separate' ? 'separate' : 'merged-pill';
+        if (mergedClockRightClickGnome !== undefined)
+            this._mergedClockRightClickGnome = Boolean(mergedClockRightClickGnome);
         if (topMargin !== undefined)
             this._topMargin = topMargin;
         if (idleHoverDwellMs !== undefined)
             this._idleHoverDwellMs = Math.max(50, Math.min(600, Math.round(idleHoverDwellMs)));
 
         const model = this._priority.getModel();
+        this._syncTopBarSlotMetrics(model);
         this._applyShellStyleClasses(model.state, model);
         this._repositionCurrent();
     }
@@ -769,6 +813,8 @@ export class IslandContainer {
     }
 
     _isPanelVisiblyBlockingTop() {
+        if (this._topBar)
+            return this._topBar.isPanelVisiblyShowing();
         const monitor = Main.layoutManager.primaryMonitor;
         const panelBox = Main.layoutManager.panelBox;
         if (!monitor || !panelBox || this._disposedActors.has(panelBox) || !panelBox.visible)
@@ -777,6 +823,78 @@ export class IslandContainer {
         const panelY = panelBox.y + (panelBox.translation_y ?? 0);
         const panelBottom = panelY + panelBox.height;
         return panelBottom > monitor.y + 4;
+    }
+
+    _getPanelSlotMetrics() {
+        if (this._topBar)
+            return this._topBar.getPanelMetrics();
+        const monitor = Main.layoutManager.primaryMonitor ?? { x: 0, y: 0, width: 1280, height: 800 };
+        const panelBox = Main.layoutManager.panelBox;
+        const panelVisible = this._isPanelVisiblyBlockingTop();
+        const panelBoxY = panelBox ? Math.round(panelBox.y + (panelBox.translation_y ?? 0)) : monitor.y;
+        const panelHeight = panelBox ? Math.max(24, Math.round(panelBox.height)) : 28;
+        return {
+            monitor,
+            panelVisible,
+            panelBoxY,
+            panelHeight,
+            innerY: panelBoxY,
+            innerHeight: panelHeight,
+            slotPillHeight: Math.max(24, Math.min(32, panelHeight - 4)),
+            panelBottom: panelBoxY + panelHeight,
+            corridorLeft: monitor.x + 8,
+            corridorRight: monitor.x + monitor.width - 8,
+            maxCenteredWidth: Math.min(360, monitor.width - 64),
+        };
+    }
+
+    _isIntegratedPanelState(model, width = null) {
+        if (!model || this._topbarIntegrationMode !== 'merged-pill')
+            return false;
+        if (!this._isPanelVisiblyBlockingTop())
+            return false;
+        if (model.state === IslandState.INTEGRATED_CLOCK)
+            return true;
+        if (model.state === IslandState.AMBIENT_DOT ||
+            model.state === IslandState.COMPACT_PILL ||
+            model.state === IslandState.SPLIT_PILL) {
+            const metrics = this._getPanelSlotMetrics();
+            const checkW = width ?? 240;
+            return checkW <= metrics.maxCenteredWidth;
+        }
+        return false;
+    }
+
+    _syncTopBarSlotMetrics(model = this._priority?.getModel(), knownWidth = null) {
+        const metrics = this._getPanelSlotMetrics();
+        const pillH = metrics.slotPillHeight ?? Math.max(24, Math.min(32, metrics.panelHeight - 4));
+        const inSlot = this._isIntegratedPanelState(model, knownWidth);
+        const metricsChanged = this._compactView.setIntegratedMetrics({
+            height: pillH,
+            maxWidth: metrics.maxCenteredWidth,
+            inSlot,
+        });
+        this._splitView.setIntegratedMetrics({
+            height: pillH,
+            maxWidth: metrics.maxCenteredWidth,
+            inSlot,
+        });
+
+        let reserveW = Math.min(metrics.maxCenteredWidth, 226);
+        if (inSlot && Number.isFinite(knownWidth) && knownWidth > 0)
+            reserveW = Math.min(metrics.maxCenteredWidth, knownWidth);
+        else if (inSlot && model?.state === IslandState.INTEGRATED_CLOCK)
+            reserveW = this._compactView.getPreferredSize(model).width;
+        else if (inSlot && model?.state === IslandState.SPLIT_PILL)
+            reserveW = this._splitView.getPreferredSize().width;
+        else if (inSlot && (model?.state === IslandState.COMPACT_PILL || model?.state === IslandState.AMBIENT_DOT))
+            reserveW = this._compactView.getPreferredSize(model).width;
+
+        this._topBar?.setSlotReservation({
+            active: Boolean(model && model.state !== IslandState.HIDDEN),
+            width: reserveW,
+        });
+        return metricsChanged;
     }
 
     _syncEnvironment() {
@@ -793,6 +911,7 @@ export class IslandContainer {
         if (this._destroying || !this._shell)
             return;
         this._syncEnvironment();
+        this._topBar?.syncPanelGeometry();
         this._repositionCurrent();
         if (this._priority.getModel()?.state !== IslandState.HIDDEN)
             this._ensureShellTopOrder();
@@ -823,14 +942,32 @@ export class IslandContainer {
         return isEdgeFlush;
     }
 
-    _computeCoords(width, model = this._priority?.getModel()) {
+    _computeCoords(width, model = this._priority?.getModel(), itemHeight = null) {
         const monitor = Main.layoutManager.primaryMonitor;
         if (!monitor)
             return { x: 0, y: 0 };
 
+        const metrics = this._getPanelSlotMetrics();
+        const panelVisible = metrics.panelVisible;
+
+        if (this._isIntegratedPanelState(model, width)) {
+            const fallbackH = metrics.slotPillHeight ?? Math.max(24, Math.min(32, metrics.panelHeight - 4));
+            const innerY = metrics.innerY ?? metrics.panelBoxY;
+            const innerH = metrics.innerHeight ?? metrics.panelHeight;
+            const pillH = Number.isFinite(itemHeight) && itemHeight > 0
+                ? Math.min(innerH, Math.round(itemHeight))
+                : fallbackH;
+            let ix = metrics.monitor.x + Math.round((metrics.monitor.width - width) / 2);
+            if (width <= (metrics.corridorRight - metrics.corridorLeft))
+                ix = Math.max(metrics.corridorLeft, Math.min(metrics.corridorRight - width, ix));
+            const iy = Math.max(
+                metrics.monitor.y + 1,
+                Math.round(innerY + (innerH - pillH) / 2)
+            );
+            return { x: ix, y: iy };
+        }
+
         const x = monitor.x + Math.round((monitor.width - width) / 2);
-        const panelBox = Main.layoutManager.panelBox;
-        const panelVisible = this._isPanelVisiblyBlockingTop();
 
         if ((model?.state === IslandState.IDLE_BAR || model?.state === IslandState.HOVER_PEEK) &&
             !panelVisible &&
@@ -840,9 +977,8 @@ export class IslandContainer {
 
         const baseTopY = monitor.y + (this._pillStyle === 'notch' ? 0 : this._topMargin);
         let y;
-        if (panelVisible && this._collisionMode === 'drop-below') {
-            const panelBottom = panelBox.y + (panelBox.translation_y ?? 0) + panelBox.height;
-            y = Math.round(Math.max(baseTopY, panelBottom + Math.max(4, this._topMargin)));
+        if (panelVisible && (this._collisionMode === 'drop-below' || this._topbarIntegrationMode === 'merged-pill')) {
+            y = Math.round(Math.max(baseTopY, metrics.panelBottom + Math.max(4, this._topMargin)));
         } else {
             y = baseTopY;
         }
@@ -875,8 +1011,11 @@ export class IslandContainer {
             return;
 
         this._syncIdleHitboxMetrics(model);
+        this._syncTopBarSlotMetrics(model);
         const { width, height } = this._getTargetSize(model);
-        const coords = this._computeCoords(width, model);
+        this._syncTopBarSlotMetrics(model, width);
+        this._applyShellStyleClasses(model.state, model, width);
+        const coords = this._computeCoords(width, model, height);
         const panelBox = Main.layoutManager.panelBox;
         const panelTransition = (panelBox && !this._disposedActors.has(panelBox))
             ? (panelBox.get_transition('y') || panelBox.get_transition('translation-y'))
@@ -899,6 +1038,7 @@ export class IslandContainer {
     _getTargetSize(model) {
         switch (model.state) {
         case IslandState.IDLE_BAR:
+        case IslandState.INTEGRATED_CLOCK:
         case IslandState.HOVER_PEEK:
         case IslandState.DROP_CATCH:
         case IslandState.AMBIENT_DOT:
@@ -924,6 +1064,7 @@ export class IslandContainer {
         return state === IslandState.EXPANDED_MODAL ||
             state === IslandState.TRANSIENT_BANNER ||
             state === IslandState.DROP_CATCH ||
+            state === IslandState.INTEGRATED_CLOCK ||
             state === IslandState.HOVER_PEEK ||
             state === IslandState.COMPACT_PILL ||
             state === IslandState.SPLIT_PILL ||
@@ -1027,13 +1168,18 @@ export class IslandContainer {
             this._pillStyle === 'floating';
     }
 
-    _applyShellStyleClasses(state, model) {
+    _applyShellStyleClasses(state, model, knownWidth = null) {
         const classes = ['bayisland-shell'];
         const panelVisible = this._isPanelVisiblyBlockingTop();
+        const inPanelSlot = this._isIntegratedPanelState(model, knownWidth);
 
         if (state === IslandState.IDLE_BAR)
             classes.push('bayisland-idle-bar');
-        else if (state === IslandState.HOVER_PEEK)
+        else if (inPanelSlot) {
+            classes.push('bayisland-integrated-clock');
+            if (model?.hovered)
+                classes.push('bayisland-integrated-clock-hover');
+        } else if (state === IslandState.HOVER_PEEK)
             classes.push(this._isEdgeFlushState(state) ? 'bayisland-hover-peek-edge' : 'bayisland-hover-peek');
         else if (state === IslandState.DROP_CATCH) {
             classes.push('bayisland-dropcatch');
@@ -1042,8 +1188,9 @@ export class IslandContainer {
         }
 
         if (this._pillStyle === 'notch' &&
+            !inPanelSlot &&
             state !== IslandState.IDLE_BAR &&
-            !(panelVisible && this._collisionMode === 'drop-below'))
+            !(panelVisible && (this._collisionMode === 'drop-below' || this._topbarIntegrationMode === 'merged-pill')))
             classes.push('bayisland-notch');
 
         if (state === IslandState.TRANSIENT_BANNER)
@@ -1143,6 +1290,8 @@ export class IslandContainer {
         }
 
         if (model.state === IslandState.HIDDEN) {
+            this._topBar?.setPanelHold(false);
+            this._topBar?.setSlotReservation({ active: false });
             this._cleanupDeferredExpandedTab();
             this._morph.setEqualizerPlaying(false);
             this._expandedView.destroyCurrentTab();
@@ -1169,6 +1318,8 @@ export class IslandContainer {
         this._setUnredirectDisabled(true);
         this._ensureShellTopOrder();
         this._syncIdleHitboxMetrics(model);
+        this._syncTopBarSlotMetrics(model);
+        this._topBar?.setPanelHold(model.state === IslandState.EXPANDED_MODAL);
 
         // Smooth two-phase collapse when returning from any dark surface -> IDLE_BAR
         if (model.state === IslandState.IDLE_BAR &&
@@ -1244,6 +1395,7 @@ export class IslandContainer {
         let updatedInPlace = false;
         if (inPlaceOnly && prevState === model.state) {
             if (model.state === IslandState.IDLE_BAR ||
+                model.state === IslandState.INTEGRATED_CLOCK ||
                 model.state === IslandState.HOVER_PEEK ||
                 model.state === IslandState.DROP_CATCH ||
                 model.state === IslandState.COMPACT_PILL ||
@@ -1262,6 +1414,7 @@ export class IslandContainer {
         if (!updatedInPlace) {
             switch (model.state) {
             case IslandState.IDLE_BAR:
+            case IslandState.INTEGRATED_CLOCK:
             case IslandState.HOVER_PEEK:
             case IslandState.DROP_CATCH:
             case IslandState.AMBIENT_DOT:
@@ -1302,6 +1455,8 @@ export class IslandContainer {
         }
 
         const { width, height } = size;
+        this._syncTopBarSlotMetrics(model, width);
+        this._applyShellStyleClasses(model.state, model, width);
 
         const mediaPlaying =
             model.persistent?.media?.active &&
@@ -1309,7 +1464,7 @@ export class IslandContainer {
             (model.state === IslandState.COMPACT_PILL || model.state === IslandState.SPLIT_PILL);
         this._morph.setEqualizerPlaying(mediaPlaying);
 
-        const { x, y } = this._computeCoords(width, model);
+        const { x, y } = this._computeCoords(width, model, height);
         const bridgeRect = passthrough ? this._computeBridgeRect(model, x, y, width, height) : null;
         this._bridgeRect = bridgeRect;
         if (passthrough && bridgeRect)
@@ -1354,6 +1509,8 @@ export class IslandContainer {
 
     destroy() {
         this._destroying = true;
+        this._topBar?.setPanelHold(false);
+        this._topBar?.setSlotReservation({ active: false });
         this._clearHoverTimers();
         this._clearResumeSafetyTimer();
         this._syncExpandedModal(false);

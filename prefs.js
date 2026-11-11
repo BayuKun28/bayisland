@@ -10,6 +10,29 @@ const PILL_STYLES = [
     { value: 'notch', label: 'Top Notch (Screen Edge)' },
 ];
 
+const INTEGRATION_MODES = [
+    { value: 'merged-pill', label: 'Merge with Top Bar Clock (Unified Pill)' },
+    { value: 'separate', label: 'Separate (Floating Handle Below Top Bar)' },
+];
+
+const MERGED_PRESETS = [
+    { value: 'hover-pill', label: 'Hover Pill Status (Battery + Clock + Profile + Badge)' },
+    { value: 'minimal-clock', label: 'Minimal Clock (Expands to Pill on Hover)' },
+    { value: 'handle-clock', label: 'Clock + Pastel Handle Accent (Expands on Hover)' },
+];
+
+const AUTOHIDE_MODES = [
+    { value: 'disabled', label: 'Disabled (Always Keep GNOME Top Bar)' },
+    { value: 'intellihide', label: 'Intellihide (Hide When Windows Touch Top Bar)' },
+    { value: 'always', label: 'Always Hide GNOME Top Bar' },
+];
+
+const AUTOHIDE_HOVER_MODES = [
+    { value: 'edges', label: 'Left & Right Screen Edges (Recommended for BayIsland)' },
+    { value: 'full-width', label: 'Full Width Across Top Edge' },
+    { value: 'off', label: 'Disabled (Overview / Super+S Only)' },
+];
+
 const COLLISION_MODES = [
     { value: 'drop-below', label: 'Option A: Drop Below Top Bar' },
     { value: 'hide-idle', label: 'Hide Idle Pill While Top Bar Shows' },
@@ -124,7 +147,7 @@ export default class BayIslandPreferences extends ExtensionPreferences {
             return false;
         });
 
-        window.add(this._buildAppearancePage(settings, window, cleanups));
+        window.add(this._buildAppearancePage(settings, window, cleanups, shellSettings));
         window.add(this._buildModulesPage(settings, cleanups));
         window.add(this._buildCompatPage(shellSettings, window));
         window.add(this._buildShortcutsPage(settings, window, cleanups));
@@ -189,16 +212,112 @@ export default class BayIslandPreferences extends ExtensionPreferences {
         return row;
     }
 
-    _buildAppearancePage(settings, window, cleanups) {
+    _buildAppearancePage(settings, window, cleanups, shellSettings) {
         const page = new Adw.PreferencesPage({
             title: 'Appearance',
             icon_name: 'preferences-desktop-appearance-symbolic',
         });
 
-        // 1. Shape & HideTopBar
+        // 1. Top Bar Integration & Built-in Autohide
+        const topBarGroup = new Adw.PreferencesGroup({
+            title: 'Top Bar Integration and Autohide',
+            description: 'Merge BayIsland into GNOME Top Bar center clock, separate them, or manage Top Bar autohide cleanly.',
+        });
+
+        const integrationRow = new Adw.ComboRow({
+            title: 'Top Bar Clock Mode',
+            subtitle: 'Merge BayIsland into Top Bar center clock when visible, or float separately. Always falls back to the pastel Idle Handle when Top Bar hides.',
+        });
+        this._bindCombo(settings, 'topbar-integration-mode', INTEGRATION_MODES, integrationRow, cleanups);
+        topBarGroup.add(integrationRow);
+
+        const mergedPresetRow = new Adw.ComboRow({
+            title: 'Integrated Pill Layout',
+            subtitle: 'Choose full Hover Pill status, Minimal Clock, or Clock with bottom pastel handle.',
+        });
+        this._bindCombo(settings, 'merged-pill-preset', MERGED_PRESETS, mergedPresetRow, cleanups);
+        topBarGroup.add(mergedPresetRow);
+
+        const rightClickRow = this._bindSwitch(
+            settings,
+            'merged-clock-right-click-gnome',
+            'Right-Click Pill Opens GNOME Calendar',
+            'Left-click opens BayIsland Hub; right-click toggles GNOME native calendar and notifications popover.'
+        );
+        topBarGroup.add(rightClickRow);
+
+        const autohideRow = new Adw.ComboRow({
+            title: 'Built-in Top Bar Autohide',
+            subtitle: 'Hide or reveal GNOME Top Bar directly inside BayIsland without needing third-party hidetopbar.',
+        });
+        this._bindCombo(settings, 'topbar-autohide-mode', AUTOHIDE_MODES, autohideRow, cleanups);
+        topBarGroup.add(autohideRow);
+
+        const hoverZoneRow = new Adw.ComboRow({
+            title: 'Top Edge Reveal Zone',
+            subtitle: 'Edges keeps top-center unobstructed so BayIsland idle hover never fights Top Bar reveal.',
+        });
+        this._bindCombo(settings, 'topbar-autohide-hover-mode', AUTOHIDE_HOVER_MODES, hoverZoneRow, cleanups);
+        topBarGroup.add(hoverZoneRow);
+
+        const showOverviewRow = this._bindSwitch(
+            settings,
+            'topbar-autohide-show-overview',
+            'Show Hidden Top Bar in Overview',
+            'Keep Top Bar visible when Overview or App Grid is open.'
+        );
+        topBarGroup.add(showOverviewRow);
+
+        const animMsRow = this._bindSpin(
+            settings,
+            'topbar-autohide-anim-ms',
+            'Top Bar Slide Animation (ms)',
+            'Slide duration when autohiding or revealing GNOME Top Bar.',
+            0, 500, 25
+        );
+        topBarGroup.add(animMsRow);
+
+        const conflictRow = new Adw.ActionRow({
+            title: 'External Hide Top Bar Active',
+            subtitle: 'hidetopbar@mathieu.bidon.ca is currently enabled — BayIsland yields built-in autohide until disabled.',
+            visible: false,
+        });
+        conflictRow.add_prefix(new Gtk.Image({ icon_name: 'dialog-warning-symbolic' }));
+        const disableExtBtn = new Gtk.Button({
+            label: 'Disable External',
+            valign: Gtk.Align.CENTER,
+            css_classes: ['destructive-action'],
+        });
+        disableExtBtn.connect('clicked', () => {
+            Gio.DBus.session.call(
+                'org.gnome.Shell.Extensions',
+                '/org/gnome/Shell/Extensions',
+                'org.gnome.Shell.Extensions',
+                'DisableExtension',
+                new GLib.Variant('(s)', ['hidetopbar@mathieu.bidon.ca']),
+                null,
+                Gio.DBusCallFlags.NO_AUTO_START,
+                1500,
+                null,
+                (conn, res) => {
+                    try {
+                        conn.call_finish(res);
+                        conflictRow.visible = false;
+                        window.add_toast?.(new Adw.Toast({ title: 'Disabled external Hide Top Bar — BayIsland autohide is active.' }));
+                    } catch {
+                        window.add_toast?.(new Adw.Toast({ title: 'Could not disable hidetopbar via D-Bus.' }));
+                    }
+                }
+            );
+        });
+        conflictRow.add_suffix(disableExtBtn);
+        topBarGroup.add(conflictRow);
+        page.add(topBarGroup);
+
+        // 2. Shape & Spacing
         const shapeGroup = new Adw.PreferencesGroup({
-            title: 'Shape and HideTopBar Adaptation',
-            description: 'Configure BayIsland visual style and adaptive positioning relative to GNOME Top Bar.',
+            title: 'Shape and Separate Mode Spacing',
+            description: 'Configure BayIsland floating capsule style and spacing relative to Top Bar or screen edge.',
         });
 
         const styleRow = new Adw.ComboRow({
@@ -209,8 +328,8 @@ export default class BayIslandPreferences extends ExtensionPreferences {
         shapeGroup.add(styleRow);
 
         const collisionRow = new Adw.ComboRow({
-            title: 'Top Bar Collision Behavior',
-            subtitle: 'Works seamlessly with hidetopbar intellihide and OpenBar Islands.',
+            title: 'Top Bar Collision Behavior (Separate Mode)',
+            subtitle: 'Used in Separate mode when GNOME Top Bar is visible.',
         });
         this._bindCombo(settings, 'topbar-collision-mode', COLLISION_MODES, collisionRow, cleanups);
         shapeGroup.add(collisionRow);
@@ -225,14 +344,53 @@ export default class BayIslandPreferences extends ExtensionPreferences {
 
         const defaultTabRow = new Adw.ComboRow({
             title: 'Default Expanded Hub Tab',
-            subtitle: 'Tab opened when clicking the idle bar or pressing Super+Alt+I.',
+            subtitle: 'Tab opened when clicking the idle bar, integrated pill, or pressing Super+Alt+I.',
         });
         this._bindCombo(settings, 'expanded-default-tab', DEFAULT_TABS, defaultTabRow, cleanups);
         shapeGroup.add(defaultTabRow);
 
         page.add(shapeGroup);
 
-        // 2. Theme & Custom Accent Color
+        const isExternalHideTopBarActive = () => {
+            if (!shellSettings)
+                return false;
+            try {
+                const enabled = new Set(shellSettings.get_strv('enabled-extensions') ?? []);
+                const disabled = new Set(shellSettings.get_strv('disabled-extensions') ?? []);
+                return enabled.has('hidetopbar@mathieu.bidon.ca') && !disabled.has('hidetopbar@mathieu.bidon.ca');
+            } catch {
+                return false;
+            }
+        };
+
+        const syncTopBarSensitivity = () => {
+            const merged = settings.get_string('topbar-integration-mode') === 'merged-pill';
+            const autohideOn = settings.get_string('topbar-autohide-mode') !== 'disabled';
+            mergedPresetRow.sensitive = merged;
+            rightClickRow.sensitive = merged;
+            collisionRow.sensitive = !merged;
+            hoverZoneRow.sensitive = autohideOn;
+            showOverviewRow.sensitive = autohideOn;
+            animMsRow.sensitive = autohideOn;
+            conflictRow.visible = autohideOn && isExternalHideTopBarActive();
+        };
+        syncTopBarSensitivity();
+        const sigInt = settings.connect('changed::topbar-integration-mode', syncTopBarSensitivity);
+        const sigAuto = settings.connect('changed::topbar-autohide-mode', syncTopBarSensitivity);
+        cleanups.push(() => {
+            settings.disconnect(sigInt);
+            settings.disconnect(sigAuto);
+        });
+        if (shellSettings) {
+            const sigEn = shellSettings.connect('changed::enabled-extensions', syncTopBarSensitivity);
+            const sigDis = shellSettings.connect('changed::disabled-extensions', syncTopBarSensitivity);
+            cleanups.push(() => {
+                shellSettings.disconnect(sigEn);
+                shellSettings.disconnect(sigDis);
+            });
+        }
+
+        // 3. Theme & Custom Accent Color
         const themeGroup = new Adw.PreferencesGroup({
             title: 'Theme and Accent Color',
             description: 'Pick a solid fill accent for active tabs, Quick Actions, controls, and today highlight.',
@@ -658,7 +816,11 @@ export default class BayIslandPreferences extends ExtensionPreferences {
         const checks = [
             [
                 'Hide Top Bar (hidetopbar@mathieu.bidon.ca)',
-                detectStatus('hidetopbar@mathieu.bidon.ca', 'Active — BayIsland idle bar clears y=0..4 and drops below visible Top Bar.', 'Inactive'),
+                detectStatus(
+                    'hidetopbar@mathieu.bidon.ca',
+                    'Active — BayIsland yields built-in autohide cleanly, clears y=0..4 for idle bar, and drops below visible Top Bar.',
+                    'Inactive (Built-in Intellihide / Always Hide available on the Appearance tab)'
+                ),
             ],
             [
                 'OpenBar (openbar@neuromorph)',

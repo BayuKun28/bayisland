@@ -11,9 +11,10 @@ BayIsland replaces scattered top-bar popups, hardware OSD overlays, and disconne
 - **Priority-Driven State Arbiter**: All system events (`OSD`, `Notifications`, `Terminal Task Alerts`, `Power/Thermal Warnings`, `Privacy`, `Timers`, `MPRIS Media`, `Hover Peek`, and `File Drag`) pass through a unified priority state machine (`PriorityManager`). Urgent alerts never get buried, concurrent timers & media merge cleanly into a `SPLIT_PILL`, and full-screen behavior stays configurable.
 - **Native Wayland & Smooth 60 FPS Morphing**: Built directly on GNOME Shell's `Clutter` compositor actor tree and `St` theme nodes (`MorphEngine`), eliminating Electron/WebKit memory overhead and rendering jitter-free frame-accurate transitions.
 - **Custom 2D Cairo Vector Visuals & Minimalist Obsidian UI**: Designed with zero noisy borders or outlines (`outline: none`), high-contrast solid accent fills (`accentCss` / dynamic `accentFgCss`), antialiased **Cairo** telemetry rings (`RingGauge`), and native Cairo volume sliders.
+- **Top Bar Integration & Built-in Intellihide (`TopBarManager`)**: Choose between merging BayIsland directly into the GNOME Top Bar center clock (`merged-pill` with `hover-pill`, `minimal-clock`, and `handle-clock` presets + optional right-click native GNOME calendar) or running separately (`separate`). Also includes optional built-in Top Bar autohide (`intellihide` / `always`) with split left/right edge reveal barriers so top-center remains dedicated to BayIsland—falling back seamlessly to the pastel Idle Grab Handle whenever the Top Bar hides.
 - **Built-in Ecosystem Compatibility (`ExtensionCompat`)**: Dynamically detects active GNOME extensions so nothing overlaps or breaks:
-  - **HideTopBar**: Supports `Option A: Drop Below Top Bar`, `Hide Idle While Top Bar Shows`, or `Overlay Top Center`.
-  - **OpenBar**: Optional real-time palette synchronization (`openbar-color-sync`) alongside 8 built-in solid color presets & custom RGB picker.
+  - **HideTopBar**: Automatically yields built-in autohide if external `hidetopbar` is active, clears `y=0..4` for the idle bar, and drops below the visible Top Bar.
+  - **OpenBar**: Claims the `dateMenu` slot non-destructively (avoiding duplicate clock pills in `merged-pill` mode) and supports real-time palette synchronization (`openbar-color-sync`) alongside 9 built-in solid color presets & custom RGB picker.
   - **Blur My Shell**, **Quick Settings Tweaks**, **Media Controls**, **Caffeine**, and **Clipboard History**.
 - **True Wayland Drag-and-Drop File Bridge**: GNOME Shell's compositor stage cannot act as an XDG drop target/source directly on Wayland. BayIsland spawns a lightweight, click-through **GTK4 drag-and-drop bridge** (`src/helpers/dnd-bridge.js`) dynamically aligned over the Shelf geometry—allowing real drag-in from Nautilus/desktop and drag-out to browsers, chat apps, or editors.
 - **Leak-Safe & Privacy-Conscious**: Deterministic lifecycle cleanup via `SignalRegistry` and `TimerRegistry` ensures zero lingering timeouts, D-Bus leaks, or lock-screen issues on `disable()`. Clipboard capture skips entries tagged with password-manager hints (`x-kde-passwordManagerHint`).
@@ -23,7 +24,9 @@ BayIsland replaces scattered top-bar popups, hardware OSD overlays, and disconne
 ## Features
 
 ### 1. Dynamic Island Capsule States
-- **Idle Grab Handle (`116×6 px` pastel-blue bar inside `160×18 px` hover zone)**: Default pastel-blue top-center pill line (`#93C5FD`) when idle—never blocks window titlebars, and manages Mutter unredirect cleanly so it remains visible and hoverable even when HideTopBar hides the Top Bar over maximized or fullscreen applications (unless *Hide Completely in Fullscreen* is turned on).
+- **Integrated Top Bar Clock (`merged-pill` [default])**: Replaces the GNOME center clock seamlessly with a single unified capsule when Top Bar is visible—available in 3 presets: **Hover Pill Status** (Battery Ring + Date/Clock + Power Profile + Unread/DND Badge + chevron), **Minimal Clock** (expands on hover), or **Clock + Pastel Handle**. Left-click expands the 5-Tab Hub below Top Bar; right-click toggles GNOME's native calendar & notification popover.
+- **Built-in Top Bar Autohide (`disabled` / `intellihide` / `always`)**: Hide/reveal GNOME Top Bar directly inside BayIsland with top-edge barrier exclusion (`edges` keeps left+right sides for Top Bar reveal while leaving top-center free for BayIsland).
+- **Idle Grab Handle (`116×6 px` pastel-blue bar inside `160×18 px` hover zone)**: Shown automatically when Top Bar hides (autohide, `hidetopbar`, maximized/fullscreen apps) or in `separate` mode—manages Mutter unredirect cleanly so it stays visible and hoverable over maximized or fullscreen windows.
 - **Hover-Peek Pill (`36 px` height)**: Symmetrical 3-zone capsule revealed after configurable hover dwell (`160 ms` default):
   - *Left*: `24 px` live Cairo battery percentage ring.
   - *Center*: Short date + live clock.
@@ -106,12 +109,13 @@ bayisland/
     │   ├── PrivacyManager.js         # PipeWire/Portal camera & mic active indicator watcher
     │   ├── QuickActionsManager.js    # Wi-Fi, Bluetooth, Night Light, DND, Audio Mixer & Screenshot actions
     │   ├── ResourceManager.js        # Sustained CPU/RAM spike monitor & alerts
-    │   └── TimerManager.js           # Countdown & Pomodoro timer engine
+    │   ├── TimerManager.js           # Countdown & Pomodoro timer engine
+    │   └── TopBarManager.js          # Top Bar dateMenu clock integration & built-in intellihide
     ├── ui/
     │   ├── IslandContainer.js        # Root St actor, GrabHelper modal handler, positioning & IPC bridge sync
     │   ├── MorphEngine.js            # Clutter easing transitions & equalizer animation loop
     │   ├── RingGauge.js              # Custom 2D Cairo antialiased circular progress gauge
-    │   ├── CompactView.js            # Idle bar, Hover-Peek capsule, Media & Timer compact pills
+    │   ├── CompactView.js            # Integrated clock presets, Idle bar, Hover-Peek, Media & Timer pills
     │   ├── SplitView.js              # Dual-slot compact pill (MPRIS + Timer/Task)
     │   ├── TransientView.js          # OSD bars, notification peeks & task banners
     │   ├── ExpandedView.js           # Streamlined header bar & adaptive-height 5-tab container

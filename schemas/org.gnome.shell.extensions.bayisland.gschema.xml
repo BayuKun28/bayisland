@@ -11,7 +11,50 @@
     <key name="topbar-collision-mode" type="s">
       <default>'drop-below'</default>
       <summary>Top Bar Visibility Behavior</summary>
-      <description>Behavior when GNOME Top Bar is visible: 'drop-below', 'hide-idle', or 'overlay'.</description>
+      <description>Behavior when GNOME Top Bar is visible in Separate mode: 'drop-below', 'hide-idle', or 'overlay'.</description>
+    </key>
+
+    <key name="topbar-integration-mode" type="s">
+      <default>'merged-pill'</default>
+      <summary>Top Bar Clock Integration Mode</summary>
+      <description>Integrate BayIsland cleanly into the GNOME Top Bar center clock ('merged-pill') or float separately ('separate'). Automatically falls back to pastel Idle Handle Bar whenever Top Bar is hidden.</description>
+    </key>
+
+    <key name="merged-pill-preset" type="s">
+      <default>'hover-pill'</default>
+      <summary>Merged Top Bar Pill Style Preset</summary>
+      <description>Visual preset when merged with Top Bar clock: 'hover-pill' (Battery Ring + Date/Clock + Power Profile + Badge), 'minimal-clock' (Clean clock that expands on hover), or 'handle-clock' (Clock with pastel handle accent).</description>
+    </key>
+
+    <key name="merged-clock-right-click-gnome" type="b">
+      <default>true</default>
+      <summary>Right-Click Merged Pill Opens GNOME Calendar</summary>
+      <description>Allow right-clicking the integrated Top Bar clock pill to open GNOME Shell native calendar and notifications popover.</description>
+    </key>
+
+    <key name="topbar-autohide-mode" type="s">
+      <default>'disabled'</default>
+      <summary>Built-in Top Bar Autohide Mode</summary>
+      <description>Control GNOME Top Bar visibility directly inside BayIsland: 'disabled', 'intellihide' (hide when windows touch/cover Top Bar), or 'always'.</description>
+    </key>
+
+    <key name="topbar-autohide-hover-mode" type="s">
+      <default>'edges'</default>
+      <summary>Built-in Autohide Top Edge Reveal Zone</summary>
+      <description>Top screen edge zones that reveal the hidden Top Bar: 'edges' (left and right sides, keeping top-center free for BayIsland), 'full-width', or 'off'.</description>
+    </key>
+
+    <key name="topbar-autohide-show-overview" type="b">
+      <default>true</default>
+      <summary>Show Hidden Top Bar in Overview</summary>
+      <description>Automatically reveal the GNOME Top Bar while Overview or App Grid is open.</description>
+    </key>
+
+    <key name="topbar-autohide-anim-ms" type="i">
+      <default>200</default>
+      <range min="0" max="500"/>
+      <summary>Top Bar Autohide Animation Duration (ms)</summary>
+      <description>Duration in milliseconds for sliding GNOME Top Bar in and out.</description>
     </key>
 
     <key name="top-margin" type="i">

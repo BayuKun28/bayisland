@@ -41,6 +41,18 @@
   border-radius: 999px;
 }
 
+.bayisland-shell.bayisland-integrated-clock {
+  background-color: rgba(10, 12, 17, 0.94);
+  border: none;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.34) !important;
+}
+
+.bayisland-shell.bayisland-integrated-clock-hover {
+  background-color: rgba(18, 22, 32, 0.96);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.44) !important;
+}
+
 .bayisland-shell.bayisland-hover-peek-edge {
   background-color: transparent;
   border: none;
@@ -120,6 +132,32 @@
 .bayisland-peek-box {
   padding: 0px 13px;
   spacing: 10px;
+}
+
+.bayisland-integrated-clock-box {
+  padding: 0px 10px;
+  spacing: 8px;
+}
+
+.bayisland-integrated-minimal-box {
+  padding: 0px 12px;
+  spacing: 7px;
+}
+
+.bayisland-integrated-handle-wrap {
+  padding: 0px;
+}
+
+.bayisland-integrated-handle-wrap .bayisland-integrated-minimal-box {
+  padding: 0px 12px 3px 12px;
+}
+
+.bayisland-integrated-handle-accent {
+  width: 46px;
+  height: 3px;
+  border-radius: 999px;
+  margin-bottom: 2px;
+  background-color: #93c5fd;
 }
 
 .bayisland-peek-center {

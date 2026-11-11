@@ -21,6 +21,7 @@ import { TimerManager } from './src/managers/TimerManager.js';
 import { NotificationManager } from './src/managers/NotificationManager.js';
 import { ResourceManager } from './src/managers/ResourceManager.js';
 import { ExternalBusService } from './src/managers/ExternalBusService.js';
+import { TopBarManager } from './src/managers/TopBarManager.js';
 
 export default class BayIslandExtension extends Extension {
     enable() {
@@ -30,6 +31,10 @@ export default class BayIslandExtension extends Extension {
         this._priority = new PriorityManager(this._timers);
         this._compat = new ExtensionCompat(this._signals);
         this._themeBridge = new ThemeBridge(this._signals);
+        this._topBar = new TopBarManager({
+            signals: this._signals,
+            timers: this._timers,
+        });
 
         this._osd = new OsdManager(this._priority);
         this._timerManager = new TimerManager({
@@ -88,6 +93,7 @@ export default class BayIslandExtension extends Extension {
             signals: this._signals,
             timers: this._timers,
             priority: this._priority,
+            topBar: this._topBar,
             callbacks: {
                 onMediaPlayPause: () => this._mpris?.playPause(),
                 onMediaNext: () => this._mpris?.next(),
@@ -161,6 +167,15 @@ export default class BayIslandExtension extends Extension {
         this._signals.connect(this._compat, 'changed', (_src, snapshot) => {
             this._island?.setCompatSnapshot(snapshot);
             this._syncThemeBridge(snapshot);
+            this._syncTopBarOptions(snapshot);
+        });
+
+        this._signals.connect(this._topBar, 'clock-updated', (_src, clockData) => {
+            this._priority?.updateMeta(clockData, { inPlaceHint: true });
+        });
+
+        this._signals.connect(this._topBar, 'panel-state-changed', () => {
+            this._island?._onEnvironmentChanged();
         });
 
         this._signals.connect(this._powerProfile, 'changed', (_src, snapshot) => {
@@ -192,6 +207,7 @@ export default class BayIslandExtension extends Extension {
         });
 
         this._island.setCompatSnapshot(this._compat.getSnapshot());
+        this._priority.updateMeta(this._topBar.getClockStrings(), { inPlaceHint: true });
         this._powerProfile.setEnabled(true);
         this._notifications.startWatchingTray();
         this._applySettings();
@@ -252,13 +268,32 @@ export default class BayIslandExtension extends Extension {
         });
     }
 
+    _syncTopBarOptions(compatSnapshot = null) {
+        if (!this._topBar || !this._settings)
+            return;
+        const snap = compatSnapshot ?? this._compat?.getSnapshot() ?? {};
+        this._topBar.setOptions({
+            integrationMode: this._settings.get_string('topbar-integration-mode'),
+            autohideMode: this._settings.get_string('topbar-autohide-mode'),
+            hoverMode: this._settings.get_string('topbar-autohide-hover-mode'),
+            showInOverview: this._settings.get_boolean('topbar-autohide-show-overview'),
+            animMs: this._settings.get_int('topbar-autohide-anim-ms'),
+            externalHideTopBarActive: Boolean(snap.hidetopbar),
+        });
+    }
+
     _applySettings() {
         const s = this._settings;
         if (!s)
             return;
 
+        this._syncTopBarOptions();
+
         const pillStyle = s.get_string('pill-style');
         const collisionMode = s.get_string('topbar-collision-mode');
+        const topbarIntegrationMode = s.get_string('topbar-integration-mode');
+        const mergedPillPreset = s.get_string('merged-pill-preset');
+        const mergedClockRightClickGnome = s.get_boolean('merged-clock-right-click-gnome');
         const topMargin = s.get_int('top-margin');
         const hideInFullscreen = s.get_boolean('hide-in-fullscreen');
         const showIdlePill = s.get_boolean('show-idle-pill');
@@ -268,22 +303,27 @@ export default class BayIslandExtension extends Extension {
         const expandedDefaultTab = s.get_string('expanded-default-tab');
         const tabOrder = s.get_strv('tab-order');
 
+        this._island._syncEnvironment();
+        this._island.setAppearance({
+            pillStyle,
+            collisionMode,
+            topbarIntegrationMode,
+            mergedClockRightClickGnome,
+            topMargin,
+            idleHoverDwellMs,
+        });
         this._priority.setOptions({
             showIdlePill,
             idleHandleEnabled,
             idleHoverPeek,
             hideInFullscreen,
             topbarCollisionMode: collisionMode,
+            topbarIntegrationMode,
+            mergedPillPreset,
             expandedDefaultTab,
             tabOrder,
         });
-
-        this._island.setAppearance({
-            pillStyle,
-            collisionMode,
-            topMargin,
-            idleHoverDwellMs,
-        });
+        this._topBar.syncPanelGeometry();
 
         this._syncThemeBridge();
 
@@ -355,6 +395,7 @@ export default class BayIslandExtension extends Extension {
         this._privacy?.destroy();
         this._power?.destroy();
         this._island?.destroy();
+        this._topBar?.destroy();
         this._themeBridge?.destroy();
         this._priority?.destroy();
         this._timers?.clearAll();
@@ -372,6 +413,7 @@ export default class BayIslandExtension extends Extension {
         this._privacy = null;
         this._power = null;
         this._island = null;
+        this._topBar = null;
         this._themeBridge = null;
         this._compat = null;
         this._priority = null;
