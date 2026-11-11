@@ -511,7 +511,7 @@ export class PriorityManager extends Signals.EventEmitter {
             };
         }
 
-        if (hasPrivacy) {
+        if (hasPrivacy && !(topbarIntegrationMode === 'merged-pill' && panelVisible)) {
             return {
                 state: IslandState.AMBIENT_DOT,
                 primary: 'privacy',

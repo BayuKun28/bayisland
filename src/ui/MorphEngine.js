@@ -251,11 +251,11 @@ export class MorphEngine {
             });
         } else {
             const sizeChanged =
-                Math.abs(this._lastWidth - width) > 1 ||
-                Math.abs(this._lastHeight - height) > 1;
+                Math.abs(this._lastWidth - width) > 0.5 ||
+                Math.abs(this._lastHeight - height) > 0.5;
             const posChanged =
-                Math.abs(this._lastX - x) > 1 ||
-                Math.abs(this._lastY - y) > 1;
+                Math.abs(this._lastX - x) > 0.5 ||
+                Math.abs(this._lastY - y) > 0.5;
             const geomChanged = sizeChanged || posChanged;
 
             if (geomChanged) {
@@ -401,7 +401,7 @@ export class MorphEngine {
         if (!this._contentBin.get_transition('opacity') && this._contentBin.opacity < 255)
             this._contentBin.opacity = 255;
 
-        if (Math.abs(this._lastX - x) <= 1 && Math.abs(this._lastY - y) <= 1)
+        if (Math.abs(this._lastX - x) <= 0.5 && Math.abs(this._lastY - y) <= 0.5)
             return;
 
         this._shell.remove_transition('x');
@@ -421,7 +421,7 @@ export class MorphEngine {
         if (!this._contentBin.get_transition('opacity') && this._contentBin.opacity < 255)
             this._contentBin.opacity = 255;
 
-        if (Math.abs(this._lastX - x) <= 1 && Math.abs(this._lastY - y) <= 1)
+        if (Math.abs(this._lastX - x) <= 0.5 && Math.abs(this._lastY - y) <= 0.5)
             return;
 
         this._lastX = x;

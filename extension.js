@@ -264,6 +264,7 @@ export default class BayIslandExtension extends Extension {
         this._themeBridge.setConfig({
             enabled: this._settings.get_boolean('openbar-color-sync'),
             openbarActive: Boolean(snap.openbar),
+            openbarDir: snap.openbarDir ?? null,
             customAccentHex: this._settings.get_string('accent-color'),
         });
     }

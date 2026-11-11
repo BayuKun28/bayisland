@@ -37,9 +37,16 @@ export class ExtensionCompat extends Signals.EventEmitter {
     }
 
     _readSnapshot() {
+        let openbarDir = null;
+        try {
+            openbarDir = Main.extensionManager.lookup(TRACKED_EXTENSIONS.OPENBAR)?.dir?.get_path?.() ?? null;
+        } catch {
+            openbarDir = null;
+        }
         return {
             hidetopbar: this._isActive(TRACKED_EXTENSIONS.HIDETOPBAR),
             openbar: this._isActive(TRACKED_EXTENSIONS.OPENBAR),
+            openbarDir,
             mediacontrols: this._isActive(TRACKED_EXTENSIONS.MEDIACONTROLS),
             blurMyShell: this._isActive(TRACKED_EXTENSIONS.BLUR_MY_SHELL),
             quickSettingsTweaks: this._isActive(TRACKED_EXTENSIONS.QUICK_SETTINGS_TWEAKS),

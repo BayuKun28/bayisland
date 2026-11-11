@@ -42,15 +42,21 @@
 }
 
 .bayisland-shell.bayisland-integrated-clock {
-  background-color: rgba(10, 12, 17, 0.94);
-  border: none;
+  background-color: rgba(20, 24, 34, 0.90);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 999px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.34) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.24) !important;
 }
 
 .bayisland-shell.bayisland-integrated-clock-hover {
-  background-color: rgba(18, 22, 32, 0.96);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.44) !important;
+  background-color: rgba(32, 38, 52, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.34) !important;
+}
+
+.bayisland-shell.bayisland-integrated-clock.bayisland-integrated-flat {
+  border: none;
+  box-shadow: none !important;
 }
 
 .bayisland-shell.bayisland-hover-peek-edge {
@@ -148,7 +154,7 @@
 
 .bayisland-peek-chip-compact {
   padding: 2px 7px;
-  spacing: 4px;
+  spacing: 5px;
 }
 
 .bayisland-peek-bat-text {
@@ -159,24 +165,35 @@
 }
 
 .bayisland-integrated-minimal-box {
-  padding: 0px 12px;
-  spacing: 7px;
+  padding: 0px 13px;
+  spacing: 6px;
 }
 
-.bayisland-integrated-handle-wrap {
+.bayisland-integrated-handle-pill {
+  width: 14px;
+  height: 4px;
+  border-radius: 999px;
+  margin-right: 2px;
+  background-color: #93c5fd;
+}
+
+.bayisland-integrated-clock .bayisland-peek-date {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgba(248, 250, 252, 0.86);
+}
+
+.bayisland-integrated-clock .bayisland-peek-sep {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(248, 250, 252, 0.42);
   padding: 0px;
 }
 
-.bayisland-integrated-handle-wrap .bayisland-integrated-minimal-box {
-  padding: 0px 12px 4px 12px;
-}
-
-.bayisland-integrated-handle-accent {
-  width: 44px;
-  height: 2.5px;
-  border-radius: 999px;
-  margin-bottom: 2px;
-  background-color: #93c5fd;
+.bayisland-integrated-clock .bayisland-peek-clock {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
 }
 
 .bayisland-peek-center {
@@ -270,12 +287,22 @@
   border-radius: 999px;
 }
 
+.bayisland-privacy-dot-sm {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+}
+
 .bayisland-privacy-dot-cam {
   background-color: #34d399;
 }
 
 .bayisland-privacy-dot-mic {
   background-color: #fb923c;
+}
+
+.bayisland-privacy-dot-mic-muted {
+  background-color: #94a3b8;
 }
 
 .bayisland-privacy-label {

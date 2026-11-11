@@ -73,6 +73,7 @@ export class TopBarManager extends Signals.EventEmitter {
         this._blockerMenu = null;
         this._blockerMenuSigId = 0;
         this._menuToggleAfterUpdateId = 0;
+        this._lastOverviewSearchPad = null;
         this._autohideSigIds = [];
         this._windowActors = new Map();
 
@@ -273,6 +274,7 @@ export class TopBarManager extends Signals.EventEmitter {
 
         let barY = panelBoxY + mTop;
         let barHeight = Math.max(24, panelBoxHeight - mTop - mBottom);
+        let matchedIslandBox = false;
 
         // Prefer _rightBox or _leftBox (never mutated by center slot sizing) when mapped & sane
         try {
@@ -287,13 +289,48 @@ export class TopBarManager extends Signals.EventEmitter {
                     }
                 }
             }
+
+            // When OpenBar Islands/Trilands insets .panel-button inside padded .button-container,
+            // align vertically with the visible left/right islands rather than the outer invisible panel bar.
+            if (panelVisible && panelActor) {
+                const panelAlpha = panelActor.get_theme_node?.()?.get_background_color?.()?.alpha ?? 255;
+                for (const candidate of [panelActor.statusArea?.quickSettings, panelActor.statusArea?.activities]) {
+                    const container = candidate?.container;
+                    const btn = (container && typeof container.get_child === 'function' ? container.get_child() : null) ?? candidate;
+                    if (!btn || !btn.visible || !btn.get_stage?.())
+                        continue;
+                    const [, by] = btn.get_transformed_position();
+                    const [, bh] = btn.get_transformed_size();
+                    if (!Number.isFinite(by) || !Number.isFinite(bh) || bh < 22 || bh > panelBoxHeight)
+                        continue;
+                    const btnAlpha = btn.get_theme_node?.()?.get_background_color?.()?.alpha ?? 0;
+                    let vPad = 0;
+                    try {
+                        const ctn = container?.get_theme_node?.();
+                        if (ctn)
+                            vPad = Math.round(ctn.get_padding(St.Side.TOP) + ctn.get_padding(St.Side.BOTTOM));
+                    } catch {
+                        // Ignore unreadable padding
+                    }
+                    if ((panelAlpha < 90 && (btnAlpha >= 80 || vPad >= 2)) || (vPad >= 2 && bh <= panelBoxHeight - 2)) {
+                        barY = Math.round(by);
+                        barHeight = Math.round(bh);
+                        matchedIslandBox = true;
+                        break;
+                    }
+                }
+            }
         } catch {
             // Keep theme-node compensated panelBox fallback
         }
 
-        const innerY = barY + bTop;
-        const innerHeight = Math.max(22, barHeight - bTop - bBottom);
-        const slotPillHeight = Math.max(24, Math.min(32, innerHeight - 4));
+        const innerY = matchedIslandBox ? barY : (barY + bTop);
+        const innerHeight = matchedIslandBox
+            ? Math.max(22, barHeight)
+            : Math.max(22, barHeight - bTop - bBottom);
+        const slotPillHeight = matchedIslandBox
+            ? Math.max(24, Math.min(44, innerHeight))
+            : Math.max(24, Math.min(34, innerHeight - 3));
         const panelBottom = Math.max(panelBoxY + panelBoxHeight, barY + barHeight);
 
         let corridorLeft = monitor.x + 8;
@@ -398,9 +435,9 @@ export class TopBarManager extends Signals.EventEmitter {
                 };
                 this._slotClaimed = true;
             }
-            const { maxCenteredWidth, innerHeight } = this.getPanelMetrics();
+            const { maxCenteredWidth, slotPillHeight, innerHeight } = this.getPanelMetrics();
             const reserveW = Math.min(maxCenteredWidth, Math.max(120, Math.round(this._reservedWidth)));
-            const targetH = Math.max(18, Math.min(26, Math.round(innerHeight - 4)));
+            const targetH = Math.max(18, Math.min(44, slotPillHeight ?? Math.round(innerHeight - 2)));
             try {
                 if (dateContainer.opacity !== 0)
                     dateContainer.opacity = 0;
@@ -408,7 +445,8 @@ export class TopBarManager extends Signals.EventEmitter {
                     dateContainer.reactive = false;
                 if (dateMenu !== dateContainer && dateMenu.reactive)
                     dateMenu.reactive = false;
-                if (Math.round(dateContainer.width) !== reserveW || Math.round(dateContainer.height) !== targetH)
+                if (!this._panelVisibleAnim &&
+                    (Math.round(dateContainer.width) !== reserveW || Math.round(dateContainer.height) !== targetH))
                     dateContainer.set_size(reserveW, targetH);
             } catch {
                 // Actor disposed
@@ -460,9 +498,49 @@ export class TopBarManager extends Signals.EventEmitter {
         if (!this._autohideActive) {
             this._activateAutohide();
         } else {
+            this._syncOverviewSearchPadding();
             this._syncPressureBarrier();
             this._scheduleOverlapCheck();
             this._reconcileAutohideVisibility('settings-changed');
+        }
+    }
+
+    _syncOverviewSearchPadding() {
+        const searchBin = Main.overview?._overview?._controls?._searchEntryBin;
+        if (!searchBin)
+            return;
+
+        let nextPad = null;
+        if (!this._destroyed && this._autohideActive && this._showInOverview) {
+            const monitor = Main.layoutManager.primaryMonitor;
+            const monY = monitor?.y ?? 0;
+            let workAreaTop = monY;
+            try {
+                if (monitor && typeof Main.layoutManager.getWorkAreaForMonitor === 'function')
+                    workAreaTop = Main.layoutManager.getWorkAreaForMonitor(monitor.index)?.y ?? monY;
+            } catch {
+                workAreaTop = monY;
+            }
+            const panelBox = Main.layoutManager.panelBox;
+            const metrics = this.getPanelMetrics();
+            const panelRestH = Math.round(panelBox?.height ?? 32);
+            const visSpan = metrics.panelVisible ? Math.round((metrics.panelBottom ?? monY) - monY) : 0;
+            const needed = Math.max(panelRestH, visSpan) - Math.max(0, Math.round(workAreaTop - monY));
+            nextPad = Math.max(26, needed);
+        }
+
+        if (nextPad === this._lastOverviewSearchPad)
+            return;
+
+        this._lastOverviewSearchPad = nextPad;
+        try {
+            if (nextPad !== null)
+                searchBin.set_style(`padding-top: ${nextPad}px;`);
+            else
+                searchBin.set_style(null);
+            searchBin.queue_relayout?.();
+        } catch {
+            // Actor disposed or stage tearing down
         }
     }
 
@@ -502,8 +580,15 @@ export class TopBarManager extends Signals.EventEmitter {
         };
 
         reg(Main.overview, 'showing', () => {
+            this._syncOverviewSearchPadding();
             if (this._showInOverview)
                 this._showPanel(this._animMs, 'overview');
+        });
+        reg(Main.overview, 'shown', () => {
+            this._syncOverviewSearchPadding();
+        });
+        reg(Main.panel, 'style-changed', () => {
+            this._syncOverviewSearchPadding();
         });
         reg(Main.overview, 'hiding', () => {
             this._reconcileAutohideVisibility('overview-hiding');
@@ -517,12 +602,14 @@ export class TopBarManager extends Signals.EventEmitter {
         reg(Main.layoutManager, 'startup-complete', () => {
             const mon = Main.layoutManager.primaryMonitor ?? { y: 0 };
             this._baseY = mon.y;
+            this._syncOverviewSearchPadding();
             this._syncPressureBarrier();
             this._reconcileAutohideVisibility('startup-complete');
         });
         reg(Main.layoutManager, 'monitors-changed', () => {
             const mon = Main.layoutManager.primaryMonitor ?? { y: 0 };
             this._baseY = mon.y;
+            this._syncOverviewSearchPadding();
             this._syncPressureBarrier();
             if (this._autohideMode === 'intellihide')
                 this._scheduleOverlapCheck();
@@ -541,6 +628,7 @@ export class TopBarManager extends Signals.EventEmitter {
             }
         });
         reg(panelBox, 'notify::height', () => {
+            this._syncOverviewSearchPadding();
             if (!this._autohideActive || !this._panelHidden || this._panelVisibleAnim || panelBox.visible)
                 return;
             const targetY = this._baseY - Math.max(24, panelBox.height) - 2;
@@ -592,6 +680,7 @@ export class TopBarManager extends Signals.EventEmitter {
         for (const wa of global.get_window_actors())
             this._watchWindowActor(wa);
 
+        this._syncOverviewSearchPadding();
         this._syncPressureBarrier();
         this._evaluateOverlapNow();
         this._reconcileAutohideVisibility('init');
@@ -599,6 +688,7 @@ export class TopBarManager extends Signals.EventEmitter {
 
     _deactivateAutohide() {
         this._autohideActive = false;
+        this._syncOverviewSearchPadding();
 
         if (this._overlapTimeoutId) {
             this._timers.clear(this._overlapTimeoutId);
