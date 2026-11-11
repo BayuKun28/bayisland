@@ -255,6 +255,14 @@ export default class BayIslandExtension extends Extension {
             mode,
             () => this._priority?.toggleExpand('shelf')
         );
+
+        Main.wm.addKeybinding(
+            'minimize-persistent-shortcut',
+            this._settings,
+            Meta.KeyBindingFlags.IGNORE_AUTOREPEAT,
+            mode,
+            () => this._priority?.toggleMinimizePersistent()
+        );
     }
 
     _syncThemeBridge(compatSnapshot = null) {
@@ -322,6 +330,7 @@ export default class BayIslandExtension extends Extension {
             topbarIntegrationMode,
             mergedPillPreset,
             expandedDefaultTab,
+            mediaIslandClock: s.get_string('media-island-clock'),
             tabOrder,
         });
         this._topBar.syncPanelGeometry();
@@ -373,6 +382,7 @@ export default class BayIslandExtension extends Extension {
             'quick-timer-shortcut',
             'quick-clipboard-shortcut',
             'quick-shelf-shortcut',
+            'minimize-persistent-shortcut',
         ]) {
             try {
                 Main.wm.removeKeybinding(key);

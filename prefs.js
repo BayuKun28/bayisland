@@ -48,6 +48,12 @@ const DEFAULT_TABS = [
     { value: 'shelf', label: 'Drag and Drop File Shelf' },
 ];
 
+const MEDIA_CLOCK_POSITIONS = [
+    { value: 'none', label: 'Disabled (Media Only)' },
+    { value: 'left', label: 'Left Side of Media Island' },
+    { value: 'right', label: 'Right Side of Media Island' },
+];
+
 const DEFAULT_TAB_ORDER = ['home', 'media', 'power', 'clipboard', 'shelf'];
 
 const TAB_ORDER_INFO = {
@@ -799,6 +805,13 @@ export default class BayIslandPreferences extends ExtensionPreferences {
             'Set to 0 to keep paused media visible indefinitely.',
             0, 300, 5
         ));
+
+        const mediaClockRow = new Adw.ComboRow({
+            title: 'Clock in Media Island',
+            subtitle: 'Display the current time on the left or right side while media is playing in the island.',
+        });
+        this._bindCombo(settings, 'media-island-clock', MEDIA_CLOCK_POSITIONS, mediaClockRow, cleanups);
+        hwGroup.add(mediaClockRow);
         page.add(hwGroup);
 
         const prodGroup = new Adw.PreferencesGroup({
@@ -1011,6 +1024,15 @@ export default class BayIslandPreferences extends ExtensionPreferences {
             '<Super><Alt>t',
             'Quick Home and Focus Timer',
             'Open directly to BayIsland Home tab with Calendar, Quick Actions, Notifications, and Timer.',
+            window,
+            cleanups
+        ));
+        keyGroup.add(this._createShortcutRow(
+            settings,
+            'minimize-persistent-shortcut',
+            '<Super><Alt>h',
+            'Minimize Persistent Island',
+            'Minimize active media, mic, or timer to an ambient pill.',
             window,
             cleanups
         ));

@@ -285,6 +285,10 @@ export class ExpandedView {
         return root;
     }
 
+    getCurrentTabId() {
+        return this._currentTabId;
+    }
+
     _mountActiveTab(tab, model, palette, snaps) {
         let child = null;
         switch (tab) {
@@ -311,6 +315,86 @@ export class ExpandedView {
             break;
         }
         this._bodyBin?.set_child(child);
+    }
+
+    switchTab(nextTab, model, palette, snapshots) {
+        if (!this._root || !this._bodyBin)
+            return false;
+        const normalized = nextTab || 'home';
+        if (this._currentTabId === normalized)
+            return this.updateInPlace(model, snapshots);
+
+        const prevTab = this._currentTabId;
+        this._currentTabId = normalized;
+        if (palette)
+            this._lastPalette = palette;
+        const pal = palette ?? this._lastPalette;
+        const acc = pal?.accentCss || '#93c5fd';
+        const fg = pal?.accentFgCss || '#090d16';
+        const activeBadgeBg = fg === '#ffffff' ? 'rgba(255, 255, 255, 0.22)' : 'rgba(9, 13, 22, 0.16)';
+
+        // 1. Update tab button styles smoothly without rebuilding header
+        if (prevTab && this._tabButtons[prevTab]) {
+            const prevBtn = this._tabButtons[prevTab];
+            prevBtn.remove_style_class_name('bayisland-hub-tab-btn-active');
+            prevBtn.style = '';
+            const inner = prevBtn.get_child();
+            if (inner) {
+                const icon = inner.get_first_child();
+                if (icon) icon.style = '';
+                const lbl = icon?.get_next_sibling();
+                if (lbl) lbl.style = '';
+            }
+            if (this._tabBadges[prevTab]) {
+                this._tabBadges[prevTab].label.style = `background-color: ${acc}; color: ${fg};`;
+                this._tabBadges[prevTab].active = false;
+            }
+        }
+
+        if (this._tabButtons[normalized]) {
+            const nextBtn = this._tabButtons[normalized];
+            nextBtn.add_style_class_name('bayisland-hub-tab-btn-active');
+            nextBtn.style = `background-color: ${acc}; color: ${fg};`;
+            const inner = nextBtn.get_child();
+            if (inner) {
+                const icon = inner.get_first_child();
+                if (icon) icon.style = `color: ${fg};`;
+                const lbl = icon?.get_next_sibling();
+                if (lbl) lbl.style = `color: ${fg}; font-weight: 700;`;
+            }
+            if (this._tabBadges[normalized]) {
+                this._tabBadges[normalized].label.style = `background-color: ${activeBadgeBg}; color: ${fg};`;
+                this._tabBadges[normalized].active = true;
+            }
+        }
+
+        // 2. Destroy old tab instance safely
+        if (this._activeTabInstance) {
+            try {
+                this._activeTabInstance.destroy();
+            } catch {}
+            this._activeTabInstance = null;
+        }
+
+        // 3. Mount new tab with quick, smooth fade-in
+        const snaps = snapshots ?? {};
+        this._mountActiveTab(normalized, model, pal, snaps);
+        const child = this._bodyBin.get_child();
+        if (child) {
+            child.opacity = 0;
+            child.ease({
+                opacity: 255,
+                duration: 110,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+        }
+
+        // 4. Update header strip clock and telemetry
+        if (this._stripClockLabel)
+            this._stripClockLabel.text = getStripClock();
+        this._updateStripPowerAndBadges(model.meta, snaps);
+
+        return true;
     }
 
     updateInPlace(model, snaps) {

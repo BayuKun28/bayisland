@@ -274,5 +274,17 @@
       <description>Keyboard shortcut to open BayIsland directly to the Drag and Drop Shelf tab.</description>
     </key>
 
+    <key name="minimize-persistent-shortcut" type="as">
+      <default>['&lt;Super&gt;&lt;Alt&gt;h']</default>
+      <summary>Shortcut to Minimize Persistent Island</summary>
+      <description>Keyboard shortcut to minimize active media, mic, or timer to an ambient pill.</description>
+    </key>
+
+    <key name="media-island-clock" type="s">
+      <default>'none'</default>
+      <summary>Clock in Media Island</summary>
+      <description>Show clock in media island: 'none', 'left', or 'right'.</description>
+    </key>
+
   </schema>
 </schemalist>

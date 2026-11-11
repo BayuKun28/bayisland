@@ -13,9 +13,9 @@ function classifyOsd(icon, label) {
 
     const joined = `${names.join(' ')} ${label || ''}`.toLowerCase();
 
-    if (joined.includes('microphone') || joined.includes('audio-input'))
+    if (joined.includes('microphone') || joined.includes('audio-input') || joined.includes('mic'))
         return { key: 'osd-mic', fallbackTitle: 'Microphone', iconColor: '#fb923c' };
-    if (joined.includes('audio-volume') || joined.includes('speaker') || joined.includes('headphones'))
+    if (joined.includes('audio-volume') || joined.includes('volume') || joined.includes('speaker') || joined.includes('headphone') || joined.includes('headset') || joined.includes('sound'))
         return { key: 'osd-volume', fallbackTitle: 'Volume', iconColor: '#60a5fa' };
     if (joined.includes('brightness') && joined.includes('keyboard'))
         return { key: 'osd-kbd-brightness', fallbackTitle: 'Keyboard Light', iconColor: '#fde047' };
@@ -106,12 +106,15 @@ export class OsdManager {
         const meta = classifyOsd(resolvedIcon, label);
         const hasLevel = level !== null && level !== undefined;
         const normalizedMax = maxLevel !== null && maxLevel !== undefined ? maxLevel : 1;
+        const stableTitle = (hasLevel && meta.key === 'osd-volume')
+            ? meta.fallbackTitle
+            : (label || meta.fallbackTitle);
 
         this._priority.pushTransient({
             kind: 'osd',
             weight: Weights.OSD,
             coalesceKey: meta.key,
-            title: label || meta.fallbackTitle,
+            title: stableTitle,
             body: hasLevel ? null : (label ? meta.fallbackTitle : null),
             icon: resolvedIcon,
             iconColor: meta.iconColor,

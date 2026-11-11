@@ -242,6 +242,7 @@ export class IslandContainer {
         this._compactView = new CompactView({
             onExpand: () => this._priority.expand(),
             onMediaToggle: () => this._cb.onMediaPlayPause?.(),
+            onToggleMinimizePersistent: () => this._priority?.toggleMinimizePersistent(),
         });
         this._splitView = new SplitView({
             onExpandTab: tab => this._priority.expand(tab),
@@ -1487,8 +1488,12 @@ export class IslandContainer {
                     updatedInPlace = this._splitView.updateInPlace(model);
                 else if (model.state === IslandState.TRANSIENT_BANNER)
                     updatedInPlace = this._transientView.updateInPlace(model);
-                else if (model.state === IslandState.EXPANDED_MODAL)
-                    updatedInPlace = this._expandedView.updateInPlace(model, this._snapshots);
+                else if (model.state === IslandState.EXPANDED_MODAL) {
+                    if (this._expandedView.getCurrentTabId() !== model.tab)
+                        updatedInPlace = this._expandedView.switchTab(model.tab, model, this._palette, this._snapshots);
+                    else
+                        updatedInPlace = this._expandedView.updateInPlace(model, this._snapshots);
+                }
             }
 
             let builtChild = null;

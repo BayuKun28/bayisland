@@ -135,6 +135,7 @@ export class PriorityManager extends Signals.EventEmitter {
         this._hovered = false;
         this._hoverPeek = false;
         this._dragCatch = false;
+        this._persistentMinimized = false;
 
         this._options = {
             showIdlePill: false,
@@ -145,6 +146,7 @@ export class PriorityManager extends Signals.EventEmitter {
             topbarIntegrationMode: 'merged-pill',
             mergedPillPreset: 'hover-pill',
             expandedDefaultTab: 'auto',
+            mediaIslandClock: 'none',
             tabOrder: [...DEFAULT_TAB_ORDER],
         };
         this._environment = {
@@ -181,6 +183,11 @@ export class PriorityManager extends Signals.EventEmitter {
             next.mergedPillPreset = ['hover-pill', 'minimal-clock', 'handle-clock'].includes(next.mergedPillPreset)
                 ? next.mergedPillPreset
                 : 'hover-pill';
+        }
+        if (next.mediaIslandClock !== undefined) {
+            next.mediaIslandClock = ['none', 'left', 'right'].includes(next.mediaIslandClock)
+                ? next.mediaIslandClock
+                : 'none';
         }
         Object.assign(this._options, next);
         if (!this._options.idleHandleEnabled)
@@ -220,6 +227,12 @@ export class PriorityManager extends Signals.EventEmitter {
 
         if (this._expanded.active && !nowActive && this._expanded.tab === slot && slot !== 'media')
             this._expanded.tab = this._pickBestTab();
+
+        if (!nowActive && this._persistentMinimized) {
+            const anyActive = Boolean(this._persistent.media?.active || this._persistent.timer?.active || this._persistent.privacy?.active);
+            if (!anyActive)
+                this._persistentMinimized = false;
+        }
 
         const canUpdateInPlace = inPlaceHint && wasActive === nowActive &&
             this._currentModel.state !== IslandState.TRANSIENT_BANNER;
@@ -372,8 +385,18 @@ export class PriorityManager extends Signals.EventEmitter {
         if (normalized === this._expanded.tab)
             return;
         this._expanded.tab = normalized;
-        // Full structural re-render for switching tabs
+        // In-place tab switch preserves header bar and avoids black flash
+        this._reconcile(true);
+    }
+
+    toggleMinimizePersistent() {
+        this._persistentMinimized = !this._persistentMinimized;
         this._reconcile(false);
+        return this._persistentMinimized;
+    }
+
+    isPersistentMinimized() {
+        return this._persistentMinimized;
     }
 
     getModel() {
@@ -472,42 +495,51 @@ export class PriorityManager extends Signals.EventEmitter {
         const hasMedia = Boolean(media.active);
         const hasTimer = Boolean(timer.active);
         const hasPrivacy = Boolean(privacy.active && (privacy.camera || privacy.mic));
+        const allowPersistentExpand = !this._persistentMinimized;
+        const currentMeta = {
+            ...this._meta,
+            persistentMinimized: this._persistentMinimized,
+        };
 
-        if (hasMedia && (hasTimer || hasPrivacy)) {
+        if (allowPersistentExpand && hasMedia && (hasTimer || hasPrivacy)) {
             return {
                 state: IslandState.SPLIT_PILL,
                 left: 'media',
                 right: hasTimer ? 'timer' : 'privacy',
                 persistent: this._persistent,
-                meta: this._meta,
+                meta: currentMeta,
+                mediaIslandClock: this._options.mediaIslandClock,
             };
         }
 
-        if (hasTimer && hasPrivacy) {
+        if (allowPersistentExpand && hasTimer && hasPrivacy) {
             return {
                 state: IslandState.SPLIT_PILL,
                 left: 'timer',
                 right: 'privacy',
                 persistent: this._persistent,
-                meta: this._meta,
+                meta: currentMeta,
+                mediaIslandClock: this._options.mediaIslandClock,
             };
         }
 
-        if (hasMedia) {
+        if (allowPersistentExpand && hasMedia) {
             return {
                 state: IslandState.COMPACT_PILL,
                 primary: 'media',
                 persistent: this._persistent,
-                meta: this._meta,
+                meta: currentMeta,
+                mediaIslandClock: this._options.mediaIslandClock,
             };
         }
 
-        if (hasTimer) {
+        if (allowPersistentExpand && hasTimer) {
             return {
                 state: IslandState.COMPACT_PILL,
                 primary: 'timer',
                 persistent: this._persistent,
-                meta: this._meta,
+                meta: currentMeta,
+                mediaIslandClock: this._options.mediaIslandClock,
             };
         }
 
@@ -516,7 +548,7 @@ export class PriorityManager extends Signals.EventEmitter {
                 state: IslandState.AMBIENT_DOT,
                 primary: 'privacy',
                 persistent: this._persistent,
-                meta: this._meta,
+                meta: currentMeta,
             };
         }
 
@@ -528,7 +560,7 @@ export class PriorityManager extends Signals.EventEmitter {
                 hovered: this._hovered,
                 expandOnHover: Boolean(idleHoverPeek),
                 persistent: this._persistent,
-                meta: this._meta,
+                meta: currentMeta,
             };
         }
 
@@ -537,7 +569,7 @@ export class PriorityManager extends Signals.EventEmitter {
                 state: IslandState.HIDDEN,
                 reason: 'panel-hide-idle',
                 persistent: this._persistent,
-                meta: this._meta,
+                meta: currentMeta,
             };
         }
 
@@ -546,7 +578,7 @@ export class PriorityManager extends Signals.EventEmitter {
                 state: IslandState.HOVER_PEEK,
                 primary: 'peek',
                 persistent: this._persistent,
-                meta: this._meta,
+                meta: currentMeta,
             };
         }
 
@@ -555,7 +587,7 @@ export class PriorityManager extends Signals.EventEmitter {
                 state: IslandState.IDLE_BAR,
                 primary: 'idle-bar',
                 persistent: this._persistent,
-                meta: this._meta,
+                meta: currentMeta,
             };
         }
 
@@ -564,7 +596,7 @@ export class PriorityManager extends Signals.EventEmitter {
                 state: IslandState.AMBIENT_DOT,
                 primary: 'idle',
                 persistent: this._persistent,
-                meta: this._meta,
+                meta: currentMeta,
             };
         }
 
@@ -572,7 +604,7 @@ export class PriorityManager extends Signals.EventEmitter {
             state: IslandState.HIDDEN,
             reason: 'idle',
             persistent: this._persistent,
-            meta: this._meta,
+            meta: currentMeta,
         };
     }
 
@@ -596,9 +628,9 @@ export class PriorityManager extends Signals.EventEmitter {
             !hoverStructDiff &&
             prev.left === next.left &&
             prev.right === next.right &&
-            prev.tab === next.tab &&
             orderA === orderB &&
-            prev.transient?.id === next.transient?.id;
+            prev.transient?.id === next.transient?.id &&
+            (prev.tab === next.tab || next.state === IslandState.EXPANDED_MODAL);
 
         this.emit('model-changed', {
             model: next,

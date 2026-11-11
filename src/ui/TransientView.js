@@ -575,7 +575,8 @@ export class TransientView {
             sourceTitle: cleanSource,
             actions,
         });
-        if (Math.abs(this._targetWidth - prevWidth) > 24)
+        const maxWDelta = t.kind === 'osd' ? 48 : 24;
+        if (Math.abs(this._targetWidth - prevWidth) > maxWDelta)
             return false;
 
         if (this._sourceLabel)
@@ -588,18 +589,33 @@ export class TransientView {
             const gicon = this._resolveGIcon(t);
             if (isRasterAvatarIcon(gicon, t.iconName) !== this._isAvatar)
                 return false;
-            if (gicon)
-                this._icon.gicon = gicon;
-            else if (t.iconName)
+            if (gicon) {
+                const curNames = this._icon.gicon?.get_names?.()?.join(',') || '';
+                const nextNames = gicon.get_names?.()?.join(',') || '';
+                if (curNames !== nextNames || !this._icon.gicon)
+                    this._icon.gicon = gicon;
+            } else if (t.iconName && this._icon.icon_name !== t.iconName) {
                 this._icon.icon_name = t.iconName;
+            }
         }
         if (t.level !== null && t.level !== undefined) {
             const maxVal = t.maxLevel && t.maxLevel > 0 ? t.maxLevel : 1;
             const ratio = Math.max(0, Math.min(1, t.level / maxVal));
             if (this._valueLabel)
                 this._valueLabel.text = `${Math.round((t.level / maxVal) * 100)}%`;
-            if (this._levelFill)
-                this._levelFill.width = Math.max(4, Math.round(this._trackWidth * ratio));
+            if (this._levelFill) {
+                const targetW = Math.max(4, Math.round(this._trackWidth * ratio));
+                if (this._levelFill.get_stage?.()) {
+                    this._levelFill.remove_all_transitions();
+                    this._levelFill.ease({
+                        width: targetW,
+                        duration: 85,
+                        mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                    });
+                } else {
+                    this._levelFill.width = targetW;
+                }
+            }
         }
         return true;
     }

@@ -143,7 +143,7 @@ export class CompactView {
             return this._renderPrivacy(model.persistent.privacy);
         if (primary === 'timer')
             return this._renderTimer(model.persistent.timer);
-        return this._renderMedia(model.persistent.media, palette);
+        return this._renderMedia(model.persistent.media, palette, model);
     }
 
     _useIntegratedFullLayout(model) {
@@ -280,6 +280,8 @@ export class CompactView {
         }
         if (model.primary === 'media' && this._currentPrimary === 'media' && this._titleLabel) {
             this._titleLabel.text = model.persistent.media.title || 'Media';
+            if (this._mediaClockLabel)
+                this._mediaClockLabel.text = model.meta?.clockText || getPeekClockString();
             return true;
         }
         return false;
@@ -372,7 +374,10 @@ export class CompactView {
         }
         if (model.primary === 'timer')
             return { width: 142, height: slotH ? Math.min(34, slotH) : 36 };
-        return { width: 224, height: slotH ? Math.min(34, slotH) : 36 };
+        const clockPos = model?.mediaIslandClock || 'none';
+        const hasClock = clockPos === 'left' || clockPos === 'right';
+        const mediaW = hasClock ? 276 : 236;
+        return { width: mediaW, height: slotH ? Math.min(34, slotH) : 36 };
     }
 
     _attachRoot(root) {
@@ -395,6 +400,7 @@ export class CompactView {
     _resetRefs() {
         this._eqBars = [];
         this._titleLabel = null;
+        this._mediaClockLabel = null;
         this._timerLabel = null;
         this._idleUnreadDot = null;
         this._peekDateLabel = null;
@@ -973,9 +979,10 @@ export class CompactView {
         return this._attachRoot(box);
     }
 
-    _renderMedia(media, palette) {
+    _renderMedia(media, palette, model = null) {
         this._resetRefs();
         this._currentPrimary = 'media';
+        const clockPos = model?.mediaIslandClock || 'none';
 
         const box = new St.BoxLayout({
             style_class: 'bayisland-compact-box',
@@ -983,6 +990,15 @@ export class CompactView {
             y_expand: true,
             y_align: Clutter.ActorAlign.CENTER,
         });
+
+        if (clockPos === 'left') {
+            this._mediaClockLabel = new St.Label({
+                text: model?.meta?.clockText || getPeekClockString(),
+                style_class: 'bayisland-compact-clock',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            box.add_child(this._mediaClockLabel);
+        }
 
         const artWrap = new St.Bin({
             style_class: 'bayisland-art-mini',
@@ -1009,6 +1025,28 @@ export class CompactView {
         const { eqBox, bars } = buildEqualizerWidget(4, palette?.accentOnDarkCss ?? palette?.accentCss ?? '#93c5fd');
         this._eqBars = bars;
         box.add_child(eqBox);
+
+        if (clockPos === 'right') {
+            this._mediaClockLabel = new St.Label({
+                text: model?.meta?.clockText || getPeekClockString(),
+                style_class: 'bayisland-compact-clock',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            box.add_child(this._mediaClockLabel);
+        }
+
+        const minBtn = new St.Button({
+            style_class: 'bayisland-compact-min-btn',
+            child: new St.Icon({
+                icon_name: 'pan-up-symbolic',
+                icon_size: 11,
+            }),
+            y_align: Clutter.ActorAlign.CENTER,
+            reactive: true,
+            can_focus: false,
+        });
+        minBtn.connect('clicked', () => this._cb.onToggleMinimizePersistent?.());
+        box.add_child(minBtn);
 
         return this._attachRoot(box);
     }
