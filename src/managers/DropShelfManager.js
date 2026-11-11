@@ -1,5 +1,5 @@
 import Gio from 'gi://Gio';
-import GioUnix from 'gi://GioUnix?version=2.0';
+import GioUnix from 'gi://GioUnix';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
 import St from 'gi://St';

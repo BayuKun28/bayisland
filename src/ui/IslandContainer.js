@@ -208,7 +208,7 @@ export class IslandContainer {
         this._shell = new St.Widget({
             name: 'bayislandShell',
             style_class: 'bayisland-shell',
-            reactive: true,
+            reactive: false,
             track_hover: true,
             can_focus: false,
             clip_to_allocation: false,
@@ -217,7 +217,8 @@ export class IslandContainer {
             y: 0,
             width: 172,
             height: 22,
-            visible: false,
+            opacity: 0,
+            visible: true,
         });
         this._shell.add_child(this._contentBin);
 
@@ -539,7 +540,7 @@ export class IslandContainer {
     }
 
     _isCoordsInShell(ex, ey) {
-        if (!this._shell || !this._shell.visible)
+        if (!this._shell || !this._shell.visible || this._shell.opacity === 0)
             return false;
         const [px, py] = this._shell.get_transformed_position();
         const [pw, ph] = this._shell.get_transformed_size();

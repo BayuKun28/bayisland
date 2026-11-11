@@ -471,7 +471,7 @@ export class MediaTab {
             });
             const row = new St.BoxLayout({ style: 'spacing: 8px;', y_align: Clutter.ActorAlign.CENTER });
             row.add_child(new St.Icon({
-                icon_name: dev.label.toLowerCase().includes('head') ? 'audio-headphones-symbolic' : 'audio-speakers-symbolic',
+                icon_name: dev.iconName || (dev.label.toLowerCase().includes('head') ? 'audio-headphones-symbolic' : 'audio-speakers-symbolic'),
                 icon_size: 14,
                 ...(dev.active ? { style: `color: ${fg};` } : {}),
             }));
@@ -482,6 +482,34 @@ export class MediaTab {
             });
             lbl.clutter_text.ellipsize = Pango.EllipsizeMode.END;
             row.add_child(lbl);
+
+            let badgeText = null;
+            let badgeBg = 'rgba(255, 255, 255, 0.12)';
+            let badgeFg = '#94a3b8';
+            const dType = dev.deviceType || '';
+            const lblLower = dev.label.toLowerCase();
+            if (dType === 'tws' || /buds|airpods|soundcore|tws|wireless/i.test(lblLower)) {
+                badgeText = 'TWS';
+                badgeBg = 'rgba(56, 189, 248, 0.18)';
+                badgeFg = '#38bdf8';
+            } else if (dType === 'dac' || /dac|ka1|fiio|hidizs|moondrop|soundcard/i.test(lblLower)) {
+                badgeText = 'DAC';
+                badgeBg = 'rgba(167, 139, 250, 0.18)';
+                badgeFg = '#a78bfa';
+            } else if (dType === 'iem' || /iem|in-ear/i.test(lblLower)) {
+                badgeText = 'IEM';
+                badgeBg = 'rgba(96, 165, 250, 0.18)';
+                badgeFg = '#60a5fa';
+            }
+
+            if (badgeText) {
+                row.add_child(new St.Label({
+                    text: badgeText,
+                    style: `font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 4px; background-color: ${dev.active ? 'rgba(0, 0, 0, 0.16)' : badgeBg}; color: ${dev.active ? fg : badgeFg};`,
+                    y_align: Clutter.ActorAlign.CENTER,
+                }));
+            }
+
             btn.set_child(row);
             btn.connect('clicked', () => this._cb.onSelectOutputDevice?.(dev.id));
             this._devCol.add_child(btn);

@@ -550,6 +550,7 @@ export class QuickActionsManager extends Signals.EventEmitter {
             const store = this._btClient.get_devices();
             const n = store?.get_n_items?.() ?? 0;
             const currentConnected = new Set();
+            const seenAddresses = new Set();
 
             for (let i = 0; i < n; i++) {
                 const dev = store.get_item(i);
@@ -557,6 +558,9 @@ export class QuickActionsManager extends Signals.EventEmitter {
                     continue;
 
                 const addr = dev.address || dev.name;
+                if (addr)
+                    seenAddresses.add(addr);
+
                 if (addr && !this._btDeviceSigIds.has(addr)) {
                     const sid = dev.connect('notify::connected', () => this._syncBluetooth());
                     this._btDeviceSigIds.set(addr, { dev, sid });
@@ -572,6 +576,14 @@ export class QuickActionsManager extends Signals.EventEmitter {
                     if (this._btBootstrapped && addr && !this._btConnectedAddresses.has(addr)) {
                         this._checkAndNotifyBtAccessory(dev);
                     }
+                }
+            }
+
+            // Prune un-paired/removed devices from signal registry
+            for (const [addr, { dev, sid }] of this._btDeviceSigIds.entries()) {
+                if (!seenAddresses.has(addr)) {
+                    try { dev?.disconnect(sid); } catch {}
+                    this._btDeviceSigIds.delete(addr);
                 }
             }
 
@@ -615,12 +627,17 @@ export class QuickActionsManager extends Signals.EventEmitter {
         if (name)
             this._lastAlertTime.set(name, now);
 
+        const batteryPct = Math.round(Number(dev.battery_percentage) || 0);
+        const body = (batteryPct > 0 && batteryPct <= 100)
+            ? `TWS Connected • ${batteryPct}% Battery`
+            : 'TWS Connected • Bluetooth Audio';
+
         this._priority.pushTransient({
             kind: 'accessory',
             weight: Weights.ACCESSORY,
             coalesceKey: `accessory-bt-${addr}`,
             title: name || 'Bluetooth Audio',
-            body: 'TWS Connected • Bluetooth Audio',
+            body,
             icon: new Gio.ThemedIcon({ name: 'audio-headset-symbolic' }),
             iconName: 'audio-headset-symbolic',
             iconColor: '#38bdf8',
@@ -847,11 +864,13 @@ export class QuickActionsManager extends Signals.EventEmitter {
                 (activeStreamId !== null && dev.get_stream_id?.() === activeStreamId);
             if (isActive)
                 this._activeOutputId = id;
+            const classification = classifyAudioDevice(dev);
             list.push({
                 id,
                 label,
                 iconName: dev.get_icon_name?.() || 'audio-speakers-symbolic',
                 active: isActive,
+                deviceType: classification ? classification.type : null,
             });
         }
         this._state.outputs = list;
