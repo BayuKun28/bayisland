@@ -15,7 +15,7 @@ export class PowerTab {
     render(_model, palette, powerSnapshot, profileSnapshot) {
         this.destroy();
 
-        const acc = palette?.accentCss || '#38bdf8';
+        const acc = palette?.accentCss || '#93c5fd';
         const fg = palette?.accentFgCss || '#090d16';
         const pp = profileSnapshot ?? {};
 
@@ -159,7 +159,7 @@ export class PowerTab {
             size: 48,
             strokeWidth: 4.4,
             fraction: 0,
-            colorCss: '#38bdf8',
+            colorCss: '#93c5fd',
             centerChild: icon,
         });
         card.add_child(ring.actor);
@@ -201,7 +201,7 @@ export class PowerTab {
         if (!this._root || !this._cards)
             return false;
 
-        const acc = palette?.accentCss || '#38bdf8';
+        const acc = palette?.accentCss || '#93c5fd';
         const fg = palette?.accentFgCss || '#090d16';
         const pp = profileSnapshot ?? {};
         const bat = pp.battery ?? {};

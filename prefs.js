@@ -56,6 +56,7 @@ const TAB_ORDER_INFO = {
 };
 
 const ACCENT_PRESETS = [
+    { name: 'Pastel Blue', hex: '#93C5FD', darkCheck: true },
     { name: 'Sky', hex: '#38BDF8', darkCheck: true },
     { name: 'Blue', hex: '#3B82F6', darkCheck: false },
     { name: 'Emerald', hex: '#34D399', darkCheck: true },
@@ -73,12 +74,12 @@ const PASTE_SHORTCUTS = [
 
 function normalizeAccentHex(raw) {
     if (typeof raw !== 'string')
-        return '#38BDF8';
+        return '#93C5FD';
     let clean = raw.trim().replace(/^#/, '');
     if (clean.length === 3)
         clean = clean.split('').map(c => `${c}${c}`).join('');
     if (!/^[0-9a-fA-F]{6}$/.test(clean))
-        return '#38BDF8';
+        return '#93C5FD';
     return `#${clean.toUpperCase()}`;
 }
 
@@ -330,7 +331,7 @@ export default class BayIslandPreferences extends ExtensionPreferences {
             syncingColor = true;
             const rgba = new Gdk.RGBA();
             if (!rgba.parse(curHex))
-                rgba.parse('#38BDF8');
+                rgba.parse('#93C5FD');
             colorBtn.set_rgba(rgba);
             syncingColor = false;
         };
@@ -445,7 +446,7 @@ export default class BayIslandPreferences extends ExtensionPreferences {
             settings,
             'idle-handle-enabled',
             'Show Idle Grab Handle Bar',
-            'Subtle thick line at top-center (sits cleanly below HideTopBar trigger strip).'
+            'Pastel-blue top-center line that stays visible even when HideTopBar hides the Top Bar over maximized/fullscreen apps.'
         ));
         idleGroup.add(this._bindSwitch(
             settings,

@@ -20,6 +20,23 @@ export class MorphEngine {
         this._lastY = 0;
         this._visible = false;
         this._morphSeq = 0;
+        this._pendingSettledCb = null;
+        this._pendingSettledSeq = 0;
+    }
+
+    _flushPendingSettled(seq) {
+        if (!this._pendingSettledCb || seq !== this._pendingSettledSeq || seq !== this._morphSeq)
+            return;
+        if (this._shell.get_transition('width') ||
+            this._shell.get_transition('height') ||
+            this._shell.get_transition('opacity') ||
+            this._shell.get_transition('x') ||
+            this._shell.get_transition('y'))
+            return;
+
+        const cb = this._pendingSettledCb;
+        this._pendingSettledCb = null;
+        cb();
     }
 
     registerEqBars(bars) {
@@ -87,7 +104,10 @@ export class MorphEngine {
         const seq = ++this._morphSeq;
 
         if (!visible) {
+            this._pendingSettledCb = null;
             if (!this._visible) {
+                this._shell.opacity = 0;
+                this._shell.hide();
                 onHidden?.();
                 return;
             }
@@ -96,8 +116,8 @@ export class MorphEngine {
             this._stopEqLoop();
             this._shell.remove_all_transitions();
             this._shell.ease({
-                y: Math.max(0, y - 6),
                 opacity: 0,
+                y: Math.max(0, y - 6),
                 duration: 190,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
                 onComplete: () => {
@@ -114,6 +134,8 @@ export class MorphEngine {
 
         const wasHidden = !this._visible;
         this._visible = true;
+        this._pendingSettledCb = onSettled || null;
+        this._pendingSettledSeq = seq;
         const isLargeTarget = width >= 380 || height >= 120;
 
         if (wasHidden) {
@@ -127,51 +149,64 @@ export class MorphEngine {
             this._shell.set_size(startW, startH);
             this._shell.opacity = 0;
             this._shell.show();
+            this._contentBin.remove_all_transitions();
             this._contentBin.opacity = 255;
 
             this._shell.ease({
-                x,
-                y,
+                opacity: 255,
                 width,
                 height,
-                opacity: 255,
+                x,
+                y,
                 duration: isLargeTarget ? 280 : 250,
                 mode: isLargeTarget
                     ? Clutter.AnimationMode.EASE_OUT_CUBIC
                     : Clutter.AnimationMode.EASE_OUT_BACK,
                 onComplete: () => {
-                    if (seq === this._morphSeq)
-                        onSettled?.();
+                    if (seq === this._morphSeq && this._pendingSettledCb) {
+                        const cb = this._pendingSettledCb;
+                        this._pendingSettledCb = null;
+                        cb();
+                    }
                     if (this._eqActive)
                         this._startEqLoop();
                 },
             });
         } else {
-            const geomChanged =
+            const sizeChanged =
                 Math.abs(this._lastWidth - width) > 1 ||
-                Math.abs(this._lastHeight - height) > 1 ||
+                Math.abs(this._lastHeight - height) > 1;
+            const posChanged =
                 Math.abs(this._lastX - x) > 1 ||
                 Math.abs(this._lastY - y) > 1;
+            const geomChanged = sizeChanged || posChanged;
 
             if (geomChanged) {
                 this._shell.remove_all_transitions();
+                const easeTarget = sizeChanged
+                    ? { width, height, x, y, opacity: 255 }
+                    : { x, y, opacity: 255 };
                 this._shell.ease({
-                    x,
-                    y,
-                    width,
-                    height,
-                    opacity: 255,
+                    ...easeTarget,
                     duration: isLargeTarget ? 280 : (isExpanding ? 260 : 220),
                     mode: isExpanding || isLargeTarget
                         ? Clutter.AnimationMode.EASE_OUT_CUBIC
                         : Clutter.AnimationMode.EASE_OUT_QUAD,
                     onComplete: () => {
-                        if (seq === this._morphSeq)
-                            onSettled?.();
+                        if (seq === this._morphSeq && this._pendingSettledCb) {
+                            const cb = this._pendingSettledCb;
+                            this._pendingSettledCb = null;
+                            cb();
+                        }
                     },
                 });
             } else {
-                onSettled?.();
+                this._shell.opacity = 255;
+                if (this._pendingSettledCb) {
+                    const cb = this._pendingSettledCb;
+                    this._pendingSettledCb = null;
+                    cb();
+                }
             }
 
             if (!inPlaceOnly) {
@@ -197,29 +232,49 @@ export class MorphEngine {
     snapPosition({ x, y }) {
         if (!this._visible)
             return;
-        this._shell.remove_all_transitions();
+
+        if (!this._shell.get_transition('opacity') && this._shell.opacity < 255)
+            this._shell.opacity = 255;
+        if (!this._contentBin.get_transition('opacity') && this._contentBin.opacity < 255)
+            this._contentBin.opacity = 255;
+
+        if (Math.abs(this._lastX - x) <= 1 && Math.abs(this._lastY - y) <= 1)
+            return;
+
+        this._shell.remove_transition('x');
+        this._shell.remove_transition('y');
         this._shell.set_position(x, y);
         this._lastX = x;
         this._lastY = y;
+        this._flushPendingSettled(this._morphSeq);
     }
 
     glidePosition({ x, y }) {
         if (!this._visible)
             return;
+
+        if (!this._shell.get_transition('opacity') && this._shell.opacity < 255)
+            this._shell.opacity = 255;
+        if (!this._contentBin.get_transition('opacity') && this._contentBin.opacity < 255)
+            this._contentBin.opacity = 255;
+
         if (Math.abs(this._lastX - x) <= 1 && Math.abs(this._lastY - y) <= 1)
             return;
 
         this._lastX = x;
         this._lastY = y;
+        const seq = this._morphSeq;
         this._shell.ease({
             x,
             y,
             duration: 210,
             mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+            onComplete: () => this._flushPendingSettled(seq),
         });
     }
 
     destroy() {
+        this._pendingSettledCb = null;
         this._stopEqLoop();
         this._eqBars = [];
     }

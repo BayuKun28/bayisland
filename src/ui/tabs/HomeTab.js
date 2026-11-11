@@ -117,7 +117,7 @@ export class HomeTab {
         this._lastPalette = palette ?? null;
         this._lastHistory = notifHistory ?? { notifications: [], tasks: [], totalUnread: 0 };
 
-        const acc = palette?.accentCss || '#38bdf8';
+        const acc = palette?.accentCss || '#93c5fd';
 
         const root = new St.BoxLayout({
             style_class: 'bayisland-bento-grid',
@@ -374,7 +374,7 @@ export class HomeTab {
         if (!cal)
             return;
 
-        const acc = this._lastPalette?.accentCss || '#38bdf8';
+        const acc = this._lastPalette?.accentCss || '#93c5fd';
         const fg = this._lastPalette?.accentFgCss || '#090d16';
 
         // Enforce 100% English month header regardless of system LC_TIME
@@ -424,7 +424,7 @@ export class HomeTab {
     }
 
     _buildQuickTile(spec, palette) {
-        const acc = palette?.accentCss || '#38bdf8';
+        const acc = palette?.accentCss || '#93c5fd';
         const fg = palette?.accentFgCss || '#090d16';
 
         const icon = new St.Icon({
@@ -471,7 +471,7 @@ export class HomeTab {
             return;
 
         const pal = palette ?? this._lastPalette;
-        const acc = pal?.accentCss || '#38bdf8';
+        const acc = pal?.accentCss || '#93c5fd';
         const fg = pal?.accentFgCss || '#090d16';
 
         const qa = quickSnapshot ?? {};
@@ -521,7 +521,7 @@ export class HomeTab {
     }
 
     _buildTimerCard(timer, palette) {
-        const acc = palette?.accentCss || '#38bdf8';
+        const acc = palette?.accentCss || '#93c5fd';
         const fg = palette?.accentFgCss || '#090d16';
 
         const card = new St.BoxLayout({
@@ -624,7 +624,7 @@ export class HomeTab {
     }
 
     _buildFeedCard(palette) {
-        const acc = palette?.accentCss || '#38bdf8';
+        const acc = palette?.accentCss || '#93c5fd';
         const fg = palette?.accentFgCss || '#090d16';
 
         const card = new St.BoxLayout({
@@ -699,7 +699,7 @@ export class HomeTab {
             return;
         this._feedBox.destroy_all_children();
 
-        const acc = this._lastPalette?.accentCss || '#38bdf8';
+        const acc = this._lastPalette?.accentCss || '#93c5fd';
         const fg = this._lastPalette?.accentFgCss || '#090d16';
 
         const notifs = this._lastHistory?.notifications ?? [];
@@ -923,7 +923,7 @@ export class HomeTab {
         if (this._timerValueLabel && t?.active) {
             this._timerValueLabel.text = formatClock(t.remainingSec ?? 0);
             if (this._timerSubLabel) {
-                const acc = this._lastPalette?.accentCss || '#38bdf8';
+                const acc = this._lastPalette?.accentCss || '#93c5fd';
                 this._timerSubLabel.text = `${t.label} • ${t.running ? 'Run' : 'Paused'}`;
                 this._timerSubLabel.style = t.running ? `color: ${acc}; font-weight: 700;` : null;
             }

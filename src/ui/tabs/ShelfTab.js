@@ -17,7 +17,7 @@ export class ShelfTab {
         this.destroy();
 
         this._lastPalette = palette ?? null;
-        const acc = palette?.accentCss || '#38bdf8';
+        const acc = palette?.accentCss || '#93c5fd';
         const fg = palette?.accentFgCss || '#090d16';
 
         const snap = shelfSnapshot ?? { enabled: true, items: [] };
@@ -141,7 +141,7 @@ export class ShelfTab {
     }
 
     _buildItemRow(item, palette) {
-        const acc = palette?.accentCss || '#38bdf8';
+        const acc = palette?.accentCss || '#93c5fd';
 
         const row = new St.BoxLayout({
             style_class: `bayisland-shelf-row${item.pinned ? ' bayisland-list-card-pinned' : ''}`,

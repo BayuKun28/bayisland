@@ -182,7 +182,7 @@ export class DropShelfManager extends Signals.EventEmitter {
                     title: added === 1 ? `Stashed: ${this._items[0].name}` : `${added} files stashed to Shelf`,
                     body: 'Open Shelf tab to drag out or press Ctrl+V',
                     iconName: 'folder-download-symbolic',
-                    iconColor: '#38bdf8',
+                    iconColor: '#93c5fd',
                     durationMs: 2600,
                 });
             }

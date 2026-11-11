@@ -22,7 +22,7 @@ function classifyOsd(icon, label) {
     if (joined.includes('brightness') || joined.includes('display'))
         return { key: 'osd-brightness', fallbackTitle: 'Brightness', iconColor: '#facc15' };
     if (joined.includes('airplane'))
-        return { key: 'osd-airplane', fallbackTitle: 'Airplane Mode', iconColor: '#38bdf8' };
+        return { key: 'osd-airplane', fallbackTitle: 'Airplane Mode', iconColor: '#93c5fd' };
     if (joined.includes('caffeine') || joined.includes('cup'))
         return { key: 'osd-caffeine', fallbackTitle: 'Caffeine', iconColor: '#fbbf24' };
 

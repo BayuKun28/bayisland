@@ -91,7 +91,7 @@ export class ExpandedView {
         const snaps = snapshots ?? {};
         const meta = model.meta ?? {};
         const privacy = model.persistent?.privacy ?? {};
-        const acc = palette?.accentCss || '#38bdf8';
+        const acc = palette?.accentCss || '#93c5fd';
         const fg = palette?.accentFgCss || '#090d16';
         const activeBadgeBg = fg === '#ffffff' ? 'rgba(255, 255, 255, 0.22)' : 'rgba(9, 13, 22, 0.16)';
 

@@ -39,7 +39,7 @@ export class ClipboardTab {
         this._lastSnapshot = clipSnapshot;
         this._lastPalette = palette ?? null;
 
-        const acc = palette?.accentCss || '#38bdf8';
+        const acc = palette?.accentCss || '#93c5fd';
         const fg = palette?.accentFgCss || '#090d16';
 
         const root = new St.BoxLayout({
@@ -99,7 +99,7 @@ export class ClipboardTab {
         });
         const updateFilterSwitch = pinnedOnly => {
             this._pinnedOnly = pinnedOnly;
-            const curAcc = this._lastPalette?.accentCss || '#38bdf8';
+            const curAcc = this._lastPalette?.accentCss || '#93c5fd';
             const curFg = this._lastPalette?.accentFgCss || '#090d16';
             if (this._allFilterBtn) {
                 this._allFilterBtn.style_class = `bayisland-clip-seg-btn${!pinnedOnly ? ' bayisland-clip-seg-btn-active' : ''}`;
@@ -179,7 +179,7 @@ export class ClipboardTab {
         if (palette)
             this._lastPalette = palette;
 
-        const acc = this._lastPalette?.accentCss || '#38bdf8';
+        const acc = this._lastPalette?.accentCss || '#93c5fd';
         const fg = this._lastPalette?.accentFgCss || '#090d16';
 
         if (this._pauseBtn) {
@@ -249,7 +249,7 @@ export class ClipboardTab {
     }
 
     _buildRow(item) {
-        const acc = this._lastPalette?.accentCss || '#38bdf8';
+        const acc = this._lastPalette?.accentCss || '#93c5fd';
         const fg = this._lastPalette?.accentFgCss || '#090d16';
 
         const row = new St.BoxLayout({

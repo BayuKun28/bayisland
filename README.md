@@ -23,7 +23,7 @@ BayIsland replaces scattered top-bar popups, hardware OSD overlays, and disconne
 ## Features
 
 ### 1. Dynamic Island Capsule States
-- **Idle Grab Handle (`104×6 px`)**: Subtle top-center pill line when idle—never blocks window titlebars.
+- **Idle Grab Handle (`116×6 px` pastel-blue bar inside `160×18 px` hover zone)**: Default pastel-blue top-center pill line (`#93C5FD`) when idle—never blocks window titlebars, and manages Mutter unredirect cleanly so it remains visible and hoverable even when HideTopBar hides the Top Bar over maximized or fullscreen applications (unless *Hide Completely in Fullscreen* is turned on).
 - **Hover-Peek Pill (`36 px` height)**: Symmetrical 3-zone capsule revealed after configurable hover dwell (`160 ms` default):
   - *Left*: `24 px` live Cairo battery percentage ring.
   - *Center*: Short date + live clock.

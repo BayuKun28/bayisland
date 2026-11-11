@@ -172,7 +172,7 @@ export class TransientView {
             const actionsRow = new St.BoxLayout({
                 style_class: 'bayisland-actions-row',
             });
-            const acc = palette?.accentCss || '#38bdf8';
+            const acc = palette?.accentCss || '#93c5fd';
             const fg = palette?.accentFgCss || '#090d16';
             for (const act of t.actions.slice(0, 3)) {
                 const btn = new St.Button({

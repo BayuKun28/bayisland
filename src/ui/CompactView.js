@@ -48,7 +48,7 @@ function getProfileIconName(profile) {
     return 'power-profile-balanced-symbolic';
 }
 
-export function buildEqualizerWidget(barCount = 4, accentCss = '#38bdf8') {
+export function buildEqualizerWidget(barCount = 4, accentCss = '#93c5fd') {
     const eqBox = new St.BoxLayout({
         style_class: 'bayisland-eq-box',
         y_align: Clutter.ActorAlign.CENTER,
@@ -153,7 +153,7 @@ export class CompactView {
 
         if (model.state === IslandState.DROP_CATCH && this._currentPrimary === 'drop-catch') {
             const hi = Boolean(model.meta?.dragHighlight);
-            const acc = this._lastPalette?.accentCss || '#38bdf8';
+            const acc = this._lastPalette?.accentCss || '#93c5fd';
             const fg = this._lastPalette?.accentFgCss || '#090d16';
             if (this._dropIcon)
                 this._dropIcon.style = hi ? `color: ${fg};` : `color: ${acc};`;
@@ -184,7 +184,7 @@ export class CompactView {
 
     getPreferredSize(model) {
         if (model.state === IslandState.IDLE_BAR)
-            return { width: 108, height: 14 };
+            return { width: 160, height: 18 };
         if (model.state === IslandState.HOVER_PEEK) {
             const unread = model.meta?.unreadNotifs ?? 0;
             const dnd = Boolean(model.meta?.dnd);
@@ -240,7 +240,6 @@ export class CompactView {
         const bar = new St.Widget({
             style_class: 'bayisland-idle-handle-bar',
             y_align: Clutter.ActorAlign.CENTER,
-            ...(hasNotifs && palette?.accentCss ? { style: `background-color: ${palette.accentCss};` } : {}),
         });
         wrap.add_child(bar);
 
@@ -320,14 +319,14 @@ export class CompactView {
         this._peekProfileIcon = new St.Icon({
             icon_name: getProfileIconName(meta.powerProfile),
             icon_size: 13,
-            style: `color: ${palette?.accentCss ?? '#38bdf8'};`,
+            style: `color: ${palette?.accentCss ?? '#93c5fd'};`,
             y_align: Clutter.ActorAlign.CENTER,
         });
         rightGroup.add_child(this._peekProfileIcon);
 
         const unread = meta.unreadNotifs ?? 0;
         if (unread > 0) {
-            const acc = palette?.accentCss || '#38bdf8';
+            const acc = palette?.accentCss || '#93c5fd';
             const fg = palette?.accentFgCss || '#090d16';
             this._peekBadge = new St.BoxLayout({
                 style_class: 'bayisland-peek-badge',
@@ -372,7 +371,7 @@ export class CompactView {
         this._currentPrimary = 'drop-catch';
         this._lastPalette = palette;
         const hi = Boolean(model.meta?.dragHighlight);
-        const acc = palette?.accentCss || '#38bdf8';
+        const acc = palette?.accentCss || '#93c5fd';
         const fg = palette?.accentFgCss || '#090d16';
 
         const box = new St.BoxLayout({
@@ -543,7 +542,7 @@ export class CompactView {
         this._titleLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
         box.add_child(this._titleLabel);
 
-        const { eqBox, bars } = buildEqualizerWidget(4, palette?.accentCss ?? '#38bdf8');
+        const { eqBox, bars } = buildEqualizerWidget(4, palette?.accentCss ?? '#93c5fd');
         this._eqBars = bars;
         box.add_child(eqBox);
 

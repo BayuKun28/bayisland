@@ -41,7 +41,7 @@ export function createRingGauge({
     size = 48,
     strokeWidth = 4.5,
     fraction = 0,
-    colorCss = '#38bdf8',
+    colorCss = '#93c5fd',
     trackCss = 'rgba(255, 255, 255, 0.11)',
     centerChild = null,
 } = {}) {

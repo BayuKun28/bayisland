@@ -46,7 +46,7 @@ export class MediaTab {
         this._micBtn = null;
         this._volMuteIcon = null;
         this._volCanvas = null;
-        this._volColor = parseRgbaColor('#38bdf8');
+        this._volColor = parseRgbaColor('#93c5fd');
         this._lastVolFrac = 0;
         this._volPctLbl = null;
         this._devCol = null;
@@ -56,7 +56,7 @@ export class MediaTab {
         this.destroy();
 
         this._lastPalette = palette ?? null;
-        const acc = palette?.accentCss || '#38bdf8';
+        const acc = palette?.accentCss || '#93c5fd';
         const fg = palette?.accentFgCss || '#090d16';
 
         const media = model.persistent.media;
@@ -448,7 +448,7 @@ export class MediaTab {
         if (!this._devCol)
             return;
         this._devCol.destroy_all_children();
-        const acc = palette?.accentCss || '#38bdf8';
+        const acc = palette?.accentCss || '#93c5fd';
         const fg = palette?.accentFgCss || '#090d16';
 
         const outputs = Array.isArray(qa.outputs) ? qa.outputs.slice(0, 6) : [];
@@ -493,7 +493,7 @@ export class MediaTab {
         if (!this._root)
             return;
         const pal = palette ?? this._lastPalette;
-        const acc = pal?.accentCss || '#38bdf8';
+        const acc = pal?.accentCss || '#93c5fd';
 
         const qa = quickSnapshot ?? {};
         if (this._micBtn) {

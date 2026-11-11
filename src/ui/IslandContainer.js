@@ -50,17 +50,13 @@ export class IslandContainer {
         this._hoverDwellTimerId = 0;
         this._hoverLeaveTimerId = 0;
         this._lastState = IslandState.HIDDEN;
-
-        this._chromeRoot = new St.Widget({
-            name: 'bayislandChromeRoot',
-            style_class: 'bayisland-chrome',
-            reactive: false,
-            layout_manager: new Clutter.FixedLayout(),
-        });
+        this._lastStyleClass = null;
+        this._lastInlineStyle = undefined;
 
         this._contentBin = new St.Bin({
             style_class: 'bayisland-content-bin',
             reactive: false,
+            clip_to_allocation: true,
             x_expand: true,
             y_expand: true,
             x_align: Clutter.ActorAlign.FILL,
@@ -73,27 +69,25 @@ export class IslandContainer {
             reactive: true,
             track_hover: true,
             can_focus: false,
-            clip_to_allocation: true,
+            clip_to_allocation: false,
             layout_manager: new Clutter.BinLayout(),
+            x: 0,
+            y: 0,
+            width: 160,
+            height: 18,
             visible: false,
         });
         this._shell.add_child(this._contentBin);
-        this._chromeRoot.add_child(this._shell);
 
-        Main.layoutManager.addChrome(this._chromeRoot, {
-            affectsInputRegion: false,
-            affectsStruts: false,
-            trackFullscreen: false,
-        });
-        Main.layoutManager.trackChrome(this._shell, {
+        Main.layoutManager.addTopChrome(this._shell, {
             affectsInputRegion: true,
             affectsStruts: false,
             trackFullscreen: false,
         });
 
         if (Main.layoutManager.modalDialogGroup &&
-            this._chromeRoot.get_parent() === Main.layoutManager.modalDialogGroup.get_parent()) {
-            Main.uiGroup.set_child_below_sibling(this._chromeRoot, Main.layoutManager.modalDialogGroup);
+            this._shell.get_parent() === Main.layoutManager.modalDialogGroup.get_parent()) {
+            Main.uiGroup.set_child_below_sibling(this._shell, Main.layoutManager.modalDialogGroup);
         }
 
         // Connect shell capture BEFORE GrabHelper initializes so Shelf passthrough runs first
@@ -215,6 +209,7 @@ export class IslandContainer {
         const panelBox = Main.layoutManager.panelBox;
         this._signals.connect(panelBox, 'notify::visible', () => this._onEnvironmentChanged());
         this._signals.connect(panelBox, 'notify::y', () => this._onEnvironmentChanged());
+        this._signals.connect(panelBox, 'notify::translation-y', () => this._onEnvironmentChanged());
         this._signals.connect(panelBox, 'notify::height', () => this._onEnvironmentChanged());
         this._signals.connect(Main.overview, 'showing', () => this._onEnvironmentChanged());
         this._signals.connect(Main.overview, 'hiding', () => this._onEnvironmentChanged());
@@ -560,13 +555,14 @@ export class IslandContainer {
         if (!monitor || !panelBox || !panelBox.visible)
             return false;
 
-        const panelBottom = panelBox.y + panelBox.height;
+        const panelY = panelBox.y + (panelBox.translation_y ?? 0);
+        const panelBottom = panelY + panelBox.height;
         return panelBottom > monitor.y + 4;
     }
 
     _syncEnvironment() {
         const monitor = Main.layoutManager.primaryMonitor;
-        this._priority.setEnvironment({
+        return this._priority.setEnvironment({
             panelVisible: this._isPanelVisiblyBlockingTop(),
             inFullscreen: Boolean(monitor?.inFullscreen),
         });
@@ -589,7 +585,7 @@ export class IslandContainer {
         const baseTopY = monitor.y + (this._pillStyle === 'notch' ? 0 : this._topMargin);
         let y;
         if (panelVisible && this._collisionMode === 'drop-below') {
-            const panelBottom = panelBox.y + panelBox.height;
+            const panelBottom = panelBox.y + (panelBox.translation_y ?? 0) + panelBox.height;
             y = Math.round(Math.max(baseTopY, panelBottom + Math.max(4, this._topMargin)));
         } else {
             y = baseTopY;
@@ -650,7 +646,7 @@ export class IslandContainer {
         case IslandState.EXPANDED_MODAL:
             return this._expandedView.getPreferredSize(model, this._snapshots);
         default:
-            return { width: 108, height: 14 };
+            return { width: 160, height: 18 };
         }
     }
 
@@ -686,20 +682,26 @@ export class IslandContainer {
         else if (alertStyle === 'power')
             classes.push('bayisland-alert-power');
 
-        this._shell.style_class = classes.join(' ');
+        const nextClass = classes.join(' ');
+        if (this._lastStyleClass !== nextClass) {
+            this._lastStyleClass = nextClass;
+            this._shell.style_class = nextClass;
+        }
         this._applyInlineTheme(state, model);
     }
 
     _applyInlineTheme(state = this._lastState, model = this._priority?.getModel()) {
-        if (state === IslandState.IDLE_BAR || !this._palette) {
-            this._shell.style = null;
-            return;
+        let nextStyle = null;
+        if (state !== IslandState.IDLE_BAR && this._palette) {
+            if (state === IslandState.DROP_CATCH && model?.meta?.dragHighlight)
+                nextStyle = `background-color: ${this._palette.accentCss}; color: ${this._palette.accentFgCss};`;
+            else
+                nextStyle = `background-color: ${this._palette.pillBgCss};`;
         }
-        if (state === IslandState.DROP_CATCH && model?.meta?.dragHighlight) {
-            this._shell.style = `background-color: ${this._palette.accentCss}; color: ${this._palette.accentFgCss};`;
-            return;
+        if (this._lastInlineStyle !== nextStyle) {
+            this._lastInlineStyle = nextStyle;
+            this._shell.style = nextStyle;
         }
-        this._shell.style = `background-color: ${this._palette.pillBgCss};`;
     }
 
     _setUnredirectDisabled(disabled) {
@@ -707,10 +709,16 @@ export class IslandContainer {
         if (want === this._unredirectDisabled)
             return;
         try {
-            if (want)
+            if (typeof global.compositor?.disable_unredirect === 'function') {
+                if (want)
+                    global.compositor.disable_unredirect();
+                else
+                    global.compositor.enable_unredirect();
+            } else if (want) {
                 Meta.disable_unredirect_for_display(global.display);
-            else
+            } else {
                 Meta.enable_unredirect_for_display(global.display);
+            }
             this._unredirectDisabled = want;
         } catch {
             // Best effort on headless/older backends
@@ -752,12 +760,12 @@ export class IslandContainer {
         if (model.state === IslandState.HIDDEN) {
             this._morph.setEqualizerPlaying(false);
             this._expandedView.destroyCurrentTab();
-            const coords = this._computeCoords(108);
+            const coords = this._computeCoords(160);
             this._morph.morphTo({
                 x: coords.x,
                 y: coords.y,
-                width: 108,
-                height: 14,
+                width: 160,
+                height: 18,
                 visible: false,
                 isExpanding: false,
                 inPlaceOnly: false,
@@ -772,8 +780,9 @@ export class IslandContainer {
         if (model.state !== IslandState.EXPANDED_MODAL)
             this._expandedView.destroyCurrentTab();
 
-        const monitor = Main.layoutManager.primaryMonitor;
-        this._setUnredirectDisabled(Boolean(monitor?.inFullscreen));
+        // Keep stage composited while BayIsland (even IDLE_BAR) is shown so
+        // Mutter never skips painting the island over maximized/fullscreen apps.
+        this._setUnredirectDisabled(true);
 
         this._applyShellStyleClasses(model.state, model);
 
@@ -870,18 +879,12 @@ export class IslandContainer {
         this._morph.destroy();
 
         try {
-            Main.layoutManager.untrackChrome(this._shell);
-        } catch {
-            // Already untracked
-        }
-        try {
-            Main.layoutManager.removeChrome(this._chromeRoot);
+            Main.layoutManager.removeChrome(this._shell);
         } catch {
             // Already removed
         }
 
-        this._chromeRoot.destroy();
-        this._chromeRoot = null;
+        this._shell?.destroy();
         this._shell = null;
         this._contentBin = null;
         this._grabHelper = null;

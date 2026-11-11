@@ -164,8 +164,21 @@ export class PriorityManager extends Signals.EventEmitter {
     }
 
     setEnvironment(env) {
-        Object.assign(this._environment, env);
+        const nextPanelVisible = env.panelVisible !== undefined
+            ? Boolean(env.panelVisible)
+            : this._environment.panelVisible;
+        const nextInFullscreen = env.inFullscreen !== undefined
+            ? Boolean(env.inFullscreen)
+            : this._environment.inFullscreen;
+
+        if (nextPanelVisible === this._environment.panelVisible &&
+            nextInFullscreen === this._environment.inFullscreen)
+            return false;
+
+        this._environment.panelVisible = nextPanelVisible;
+        this._environment.inFullscreen = nextInFullscreen;
         this._reconcile(false);
+        return true;
     }
 
     updateMeta(data, { inPlaceHint = true } = {}) {

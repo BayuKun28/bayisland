@@ -2,7 +2,7 @@ import Gio from 'gi://Gio';
 import * as Signals from 'resource:///org/gnome/shell/misc/signals.js';
 
 const OPENBAR_SCHEMA = 'org.gnome.shell.extensions.openbar';
-const DEFAULT_ACCENT_HEX = '#38BDF8';
+const DEFAULT_ACCENT_HEX = '#93C5FD';
 
 function rgbUnitToByte(strVal, fallback) {
     const parsed = Number.parseFloat(strVal);
@@ -17,13 +17,13 @@ function clampByte(v) {
 
 export function parseHexRgb(hexStr) {
     if (typeof hexStr !== 'string')
-        return { r: 56, g: 189, b: 248, hex: DEFAULT_ACCENT_HEX };
+        return { r: 147, g: 197, b: 253, hex: DEFAULT_ACCENT_HEX };
 
     let clean = hexStr.trim().replace(/^#/, '');
     if (clean.length === 3)
         clean = clean.split('').map(c => `${c}${c}`).join('');
     if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(clean))
-        return { r: 56, g: 189, b: 248, hex: DEFAULT_ACCENT_HEX };
+        return { r: 147, g: 197, b: 253, hex: DEFAULT_ACCENT_HEX };
 
     const r = Number.parseInt(clean.slice(0, 2), 16);
     const g = Number.parseInt(clean.slice(2, 4), 16);

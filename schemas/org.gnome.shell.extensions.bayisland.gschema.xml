@@ -36,7 +36,7 @@
     <key name="idle-handle-enabled" type="b">
       <default>true</default>
       <summary>Show Top-Center Idle Grab Handle</summary>
-      <description>Display an unobtrusive thick pill line at top-center when idle so BayIsland can be hovered or clicked anytime.</description>
+      <description>Display a pastel-blue pill line at top-center when idle so BayIsland stays visible and hoverable even when HideTopBar hides the Top Bar over maximized or fullscreen windows.</description>
     </key>
 
     <key name="idle-hover-peek" type="b">
@@ -59,7 +59,7 @@
     </key>
 
     <key name="accent-color" type="s">
-      <default>'#38bdf8'</default>
+      <default>'#93C5FD'</default>
       <summary>Custom Accent Color</summary>
       <description>Solid accent hex color used for active tabs, tiles, controls, and indicators when OpenBar Sync is off or unavailable.</description>
     </key>

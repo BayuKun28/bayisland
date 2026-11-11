@@ -82,7 +82,7 @@ export class SplitView {
             this._mediaLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
             leftBox.add_child(this._mediaLabel);
 
-            const { eqBox, bars } = buildEqualizerWidget(3, palette?.accentCss ?? '#38bdf8');
+            const { eqBox, bars } = buildEqualizerWidget(3, palette?.accentCss ?? '#93c5fd');
             this._eqBars = bars;
             leftBox.add_child(eqBox);
         } else {
