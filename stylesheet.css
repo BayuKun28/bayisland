@@ -1,0 +1,1122 @@
+/* BayIsland Minimalist Obsidian Design System (v2.2)
+ * Strictly namespaced to .bayisland-* and completely borderless/outline-free.
+ * Active, selected, and pinned states use solid accent fills with dynamic contrast. */
+
+.bayisland-chrome {
+  background-color: transparent;
+}
+
+.bayisland-shell,
+.bayisland-shell *,
+.bayisland-shell StButton,
+.bayisland-shell StButton:focus,
+.bayisland-shell StEntry,
+.bayisland-shell StEntry:focus,
+.bayisland-calendar-wrap *:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.bayisland-shell {
+  background-color: rgba(10, 12, 17, 0.96);
+  border: none;
+  border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.56) !important;
+  color: #f8fafc;
+  padding: 0px;
+}
+
+.bayisland-shell.bayisland-idle-bar {
+  background-color: transparent;
+  border: none;
+  box-shadow: none !important;
+}
+
+.bayisland-shell.bayisland-hover-peek {
+  background-color: rgba(12, 14, 20, 0.96);
+  border: none;
+  border-radius: 999px;
+}
+
+.bayisland-shell.bayisland-dropcatch {
+  background-color: rgba(11, 14, 21, 0.97);
+  border: none;
+  border-radius: 22px;
+}
+
+.bayisland-shell.bayisland-dropcatch-glow {
+  background-color: #38bdf8;
+  color: #090d16;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.6) !important;
+}
+
+.bayisland-shell.bayisland-notch {
+  border: none;
+  border-radius: 0px 0px 20px 20px;
+}
+
+.bayisland-shell.bayisland-transient {
+  border-radius: 24px;
+}
+
+.bayisland-shell.bayisland-expanded {
+  background-color: rgba(10, 12, 17, 0.97);
+  border: none;
+  border-radius: 26px;
+  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.72) !important;
+}
+
+.bayisland-content-bin {
+  padding: 0px;
+}
+
+/* ---------- Idle Grab Handle, Hover Peek & Drop Catch ---------- */
+
+.bayisland-idle-handle-wrap {
+  spacing: 6px;
+  padding: 2px 6px;
+  background-color: transparent;
+}
+
+.bayisland-idle-handle-bar {
+  width: 82px;
+  height: 4px;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.44);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.48) !important;
+}
+
+.bayisland-idle-handle-wrap:hover .bayisland-idle-handle-bar {
+  width: 92px;
+  height: 5px;
+  background-color: rgba(255, 255, 255, 0.78);
+}
+
+.bayisland-idle-handle-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background-color: #38bdf8;
+}
+
+.bayisland-peek-box {
+  padding: 0px 13px;
+  spacing: 10px;
+}
+
+.bayisland-peek-center {
+  spacing: 6px;
+}
+
+.bayisland-peek-right {
+  spacing: 6px;
+}
+
+.bayisland-peek-date {
+  font-size: 11px;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.bayisland-peek-ring-num {
+  font-size: 8px;
+  font-weight: 800;
+  color: #f8fafc;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-peek-clock {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-peek-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background-color: #38bdf8;
+  color: #090d16;
+  font-size: 10px;
+  font-weight: 700;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-peek-chevron {
+  color: #94a3b8;
+}
+
+.bayisland-dropcatch-box {
+  padding: 10px 16px;
+  spacing: 12px;
+}
+
+/* ---------- Ambient & Compact ---------- */
+
+.bayisland-ambient-box {
+  padding: 0px 10px;
+  spacing: 6px;
+}
+
+.bayisland-compact-box {
+  padding: 0px 12px;
+  spacing: 8px;
+}
+
+.bayisland-idle-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.4);
+}
+
+.bayisland-privacy-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.bayisland-privacy-dot-cam {
+  background-color: #34d399;
+}
+
+.bayisland-privacy-dot-mic {
+  background-color: #fb923c;
+}
+
+.bayisland-privacy-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.bayisland-art-mini {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.bayisland-compact-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.bayisland-compact-sub {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-eq-box {
+  spacing: 2px;
+  height: 14px;
+}
+
+.bayisland-eq-bar {
+  width: 2.5px;
+  height: 12px;
+  border-radius: 2px;
+  background-color: #38bdf8;
+}
+
+/* ---------- Split Pill ---------- */
+
+.bayisland-split-root {
+  spacing: 8px;
+  padding: 0px 10px;
+}
+
+.bayisland-split-divider {
+  width: 1px;
+  height: 14px;
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+.bayisland-split-wing {
+  spacing: 6px;
+  padding: 2px 5px;
+  border-radius: 14px;
+  border: none;
+}
+
+.bayisland-split-wing:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.bayisland-timer-pill-text {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fbbf24;
+  font-feature-settings: "tnum";
+}
+
+/* ---------- Transient Banner (OSD / Power / Notif / Task / Spike) ---------- */
+
+.bayisland-transient-box {
+  padding: 10px 16px;
+  spacing: 12px;
+}
+
+.bayisland-transient-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.bayisland-transient-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.bayisland-transient-body {
+  font-size: 12px;
+  font-weight: 400;
+  color: #cbd5e1;
+}
+
+.bayisland-transient-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f1f5f9;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-level-track {
+  height: 6px;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+.bayisland-level-fill {
+  height: 5px;
+  border-radius: 999px;
+  background-color: #38bdf8;
+}
+
+.bayisland-level-fill-overdrive {
+  background-color: #ef4444;
+}
+
+.bayisland-level-fill-power {
+  background-color: #34d399;
+}
+
+.bayisland-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.bayisland-badge-success {
+  background-color: #34d399;
+  color: #052e16;
+}
+
+.bayisland-badge-error {
+  background-color: #ef4444;
+  color: #ffffff;
+}
+
+.bayisland-badge-warn {
+  background-color: #fbbf24;
+  color: #090d16;
+}
+
+.bayisland-actions-row {
+  spacing: 6px;
+  margin-top: 6px;
+}
+
+.bayisland-action-btn {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.09);
+  color: #f1f5f9;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.bayisland-action-btn:hover {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+
+.bayisland-action-btn-primary {
+  background-color: #38bdf8;
+  color: #090d16;
+  font-weight: 700;
+}
+
+.bayisland-action-btn-primary:hover {
+  background-color: #7dd3fc;
+}
+
+.bayisland-dismiss-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.07);
+  color: #cbd5e1;
+}
+
+.bayisland-dismiss-btn:hover {
+  background-color: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+/* ---------- 5-Tab Expanded Minimalist Obsidian Bento Hub ---------- */
+
+.bayisland-hub-root {
+  padding: 14px 16px;
+  spacing: 10px;
+}
+
+.bayisland-hub-header {
+  spacing: 8px;
+}
+
+.bayisland-hub-nav-row {
+  spacing: 4px;
+}
+
+.bayisland-hub-utility-row {
+  spacing: 6px;
+}
+
+.bayisland-hub-header-clock {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f1f5f9;
+  padding: 0px 4px;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-tab-count {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background-color: #38bdf8;
+  color: #090d16;
+  font-size: 10px;
+  font-weight: 700;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-hub-mini-pill,
+.bayisland-hub-mini-pill-btn {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.065);
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 600;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-hub-mini-pill-btn:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.bayisland-hub-mini-danger,
+.bayisland-hub-mini-danger:hover {
+  background-color: #ef4444;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.bayisland-hub-tab-btn {
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: none;
+  background-color: transparent;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.bayisland-hub-tab-inner {
+  spacing: 5px;
+}
+
+.bayisland-hub-tab-btn:hover {
+  background-color: rgba(255, 255, 255, 0.085);
+  color: #f1f5f9;
+}
+
+.bayisland-hub-tab-btn-active,
+.bayisland-hub-tab-btn-active:hover {
+  background-color: #38bdf8;
+  border: none;
+  color: #090d16;
+  font-weight: 700;
+}
+
+/* ---------- Shared Borderless Bento Surfaces & Typography ---------- */
+
+.bayisland-bento-grid {
+  spacing: 10px;
+}
+
+.bayisland-bento-card {
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.045);
+}
+
+.bayisland-section-title {
+  font-size: 10px;
+  font-weight: 800;
+  color: #64748b;
+}
+
+.bayisland-muted-sm {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.bayisland-muted-xs {
+  font-size: 10px;
+  color: #64748b;
+}
+
+.bayisland-kv-val {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f1f5f9;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-mini-pill-btn {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.bayisland-mini-pill-btn:hover {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+
+.bayisland-mini-pill-btn-active {
+  background-color: #38bdf8;
+  color: #090d16;
+  font-weight: 700;
+}
+
+.bayisland-mini-pill-warn,
+.bayisland-mini-pill-btn-warn {
+  background-color: #fbbf24;
+  color: #090d16;
+  font-weight: 700;
+}
+
+.bayisland-icon-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.065);
+  color: #cbd5e1;
+}
+
+.bayisland-icon-btn:hover {
+  background-color: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.bayisland-icon-btn-star {
+  background-color: #fbbf24;
+  color: #090d16;
+}
+
+.bayisland-icon-btn-star:hover {
+  background-color: #f59e0b;
+  color: #090d16;
+}
+
+.bayisland-icon-btn-del:hover {
+  background-color: #ef4444;
+  color: #ffffff;
+}
+
+/* ---------- Home Tab: Editorial Date, Borderless Calendar, Quick Actions & Feed ---------- */
+
+.bayisland-home-left {
+  width: 344px;
+  spacing: 10px;
+}
+
+.bayisland-home-right {
+  spacing: 10px;
+}
+
+.bayisland-home-hero {
+  spacing: 10px;
+  padding: 2px 2px;
+}
+
+.bayisland-hero-date-col {
+  width: 112px;
+  spacing: 1px;
+}
+
+.bayisland-hero-weekday {
+  font-size: 10px;
+  font-weight: 800;
+  color: #38bdf8;
+}
+
+.bayisland-hero-day {
+  font-size: 38px;
+  font-weight: 800;
+  color: #ffffff;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-hero-month {
+  font-size: 11px;
+  font-weight: 500;
+  color: #cbd5e1;
+}
+
+.bayisland-hero-clock {
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  margin-top: 3px;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-calendar-wrap {
+  padding-top: 1px;
+}
+
+.bayisland-calendar-wrap .calendar,
+.bayisland-calendar-wrap .calendar-month-header,
+.bayisland-calendar-wrap .calendar-day,
+.bayisland-calendar-wrap .calendar-day-base,
+.bayisland-calendar-wrap .calendar-day-top,
+.bayisland-calendar-wrap .calendar-day-left,
+.bayisland-calendar-wrap .calendar-weekday,
+.bayisland-calendar-wrap .calendar-weekend,
+.bayisland-calendar-wrap .calendar-other-month,
+.bayisland-calendar-wrap .calendar-today {
+  background-color: transparent;
+  border: none;
+  border-width: 0px;
+  box-shadow: none !important;
+}
+
+.bayisland-calendar-wrap .calendar {
+  padding: 0px;
+  margin: 0px;
+  spacing-rows: 2px;
+  spacing-columns: 2px;
+}
+
+.bayisland-calendar-wrap .calendar-month-header {
+  padding-bottom: 3px;
+}
+
+.bayisland-calendar-wrap .calendar .calendar-month-header .calendar-month-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #e2e8f0 !important;
+  background-color: transparent;
+  border: none;
+  padding: 2px 6px;
+  width: auto;
+}
+
+.bayisland-calendar-wrap .calendar .calendar-month-header .calendar-change-month-back,
+.bayisland-calendar-wrap .calendar .calendar-month-header .calendar-change-month-forward {
+  padding: 3px 6px;
+  border-radius: 999px;
+  border: none;
+  box-shadow: none;
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+}
+
+.bayisland-calendar-wrap .calendar .calendar-month-header .calendar-change-month-back:hover,
+.bayisland-calendar-wrap .calendar .calendar-month-header .calendar-change-month-forward:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.bayisland-calendar-wrap .calendar .calendar-day-heading {
+  font-size: 9px;
+  font-weight: 700;
+  color: #64748b;
+  width: 22px;
+  padding: 2px 0px;
+  margin: 0px;
+  text-align: center;
+  background-color: transparent;
+  border: none;
+}
+
+.bayisland-calendar-wrap .calendar .calendar-week-number {
+  font-size: 9px;
+  color: #64748b;
+  padding: 0px 3px 0px 0px;
+  border: none;
+  background-color: transparent;
+}
+
+.bayisland-calendar-wrap .calendar .calendar-day,
+.bayisland-calendar-wrap .calendar .calendar-day-base {
+  font-size: 10px;
+  font-weight: 500;
+  width: 22px;
+  height: 21px;
+  padding: 0px;
+  margin: 0px;
+  border-radius: 999px;
+  color: #e2e8f0;
+  text-align: center;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.bayisland-calendar-wrap .calendar .calendar-day:hover,
+.bayisland-calendar-wrap .calendar .calendar-day-base:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.bayisland-calendar-wrap .calendar .calendar-day:selected,
+.bayisland-calendar-wrap .calendar .calendar-day:active,
+.bayisland-calendar-wrap .calendar .calendar-day-base:selected,
+.bayisland-calendar-wrap .calendar .calendar-day-base:active {
+  background-color: rgba(241, 245, 249, 0.9);
+  color: #090d16;
+  font-weight: 700;
+}
+
+.bayisland-calendar-wrap .calendar .calendar-other-month,
+.bayisland-calendar-wrap .calendar .calendar-other-month-day {
+  color: #475569;
+}
+
+.bayisland-calendar-wrap .calendar .calendar-day.calendar-today,
+.bayisland-calendar-wrap .calendar .calendar-day.calendar-today:selected,
+.bayisland-calendar-wrap .calendar .calendar-day.calendar-today:hover,
+.bayisland-calendar-wrap .calendar .calendar-day.calendar-today:focus,
+.bayisland-calendar-wrap .calendar .calendar-day.calendar-today:active {
+  background-color: #38bdf8;
+  background-image: none;
+  color: #090d16 !important;
+  font-weight: 700;
+}
+
+.bayisland-calendar-wrap .calendar-day-with-events {
+  font-weight: 700;
+}
+
+.bayisland-agenda-box {
+  padding-top: 6px;
+  spacing: 2px;
+}
+
+.bayisland-agenda-item {
+  font-size: 10px;
+  font-weight: 500;
+  color: #cbd5e1;
+}
+
+.bayisland-qa-tile {
+  padding: 0px;
+  border-radius: 12px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+}
+
+.bayisland-qa-tile:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.bayisland-qa-tile-active,
+.bayisland-qa-tile-active:hover {
+  background-color: #38bdf8;
+  border: none;
+  color: #090d16;
+}
+
+.bayisland-qa-hint {
+  font-size: 10px;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.bayisland-focus-clock {
+  font-size: 21px;
+  font-weight: 800;
+  color: #f8fafc;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-focus-btn {
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.09);
+  color: #f1f5f9;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.bayisland-focus-btn:hover {
+  background-color: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+/* ---------- Power Tab (Mode Selector + 2x2 Cairo Ring Telemetry Bento) ---------- */
+
+.bayisland-segment-row {
+  padding: 3px;
+  spacing: 4px;
+  border-radius: 12px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.045);
+}
+
+.bayisland-segment-btn {
+  padding: 6px 10px;
+  border-radius: 9px;
+  border: none;
+  background-color: transparent;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bayisland-segment-btn:hover {
+  background-color: rgba(255, 255, 255, 0.075);
+  color: #f1f5f9;
+}
+
+.bayisland-segment-btn-active {
+  background-color: #38bdf8;
+  border: none;
+  color: #090d16;
+  font-weight: 700;
+}
+
+.bayisland-ring-card {
+  padding: 11px 14px;
+  spacing: 12px;
+  border-radius: 16px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.045);
+}
+
+.bayisland-ring-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.bayisland-ring-metric {
+  font-size: 19px;
+  font-weight: 700;
+  color: #f8fafc;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-ring-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: #94a3b8;
+  font-feature-settings: "tnum";
+}
+
+/* ---------- Media Tab (Compact Landscape Hero Stage + Audio Mixer) ---------- */
+
+.bayisland-media-stage {
+  width: 374px;
+  padding: 14px 16px;
+  spacing: 10px;
+}
+
+.bayisland-media-source-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background-color: #38bdf8;
+}
+
+.bayisland-media-player {
+  font-size: 10px;
+  font-weight: 800;
+  color: #38bdf8;
+}
+
+.bayisland-art-hero {
+  width: 84px;
+  height: 84px;
+  border-radius: 14px;
+  border: none;
+  padding: 0px;
+  background-color: rgba(255, 255, 255, 0.065);
+}
+
+.bayisland-art-hero:hover {
+  background-color: rgba(255, 255, 255, 0.11);
+}
+
+.bayisland-media-title-hero {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.bayisland-media-artist {
+  font-size: 12px;
+  font-weight: 400;
+  color: #94a3b8;
+}
+
+.bayisland-scrub-hitbox {
+  background-color: transparent;
+}
+
+.bayisland-scrub-track {
+  height: 5px;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+.bayisland-scrub-fill {
+  height: 5px;
+  border-radius: 999px;
+  background-color: #38bdf8;
+}
+
+.bayisland-scrub-knob {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background-color: #ffffff;
+}
+
+.bayisland-time-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #94a3b8;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-ctrl-row-hero {
+  spacing: 16px;
+}
+
+.bayisland-ctrl-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+}
+
+.bayisland-ctrl-btn:hover {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+
+.bayisland-ctrl-btn-play-hero {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: none;
+  background-color: #38bdf8;
+  color: #090d16;
+}
+
+.bayisland-ctrl-btn-play-hero:hover {
+  background-color: #7dd3fc;
+}
+
+.bayisland-output-btn {
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.bayisland-output-btn:hover {
+  background-color: rgba(255, 255, 255, 0.11);
+  color: #ffffff;
+}
+
+.bayisland-output-btn-active,
+.bayisland-output-btn-active:hover {
+  background-color: #38bdf8;
+  color: #090d16;
+  font-weight: 700;
+}
+
+/* ---------- Clipboard, Shelf & Merged Activity Feed ---------- */
+
+.bayisland-clip-seg {
+  padding: 2px;
+  spacing: 2px;
+  border-radius: 999px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.065);
+}
+
+.bayisland-clip-seg-btn {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: none;
+  background-color: transparent;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.bayisland-clip-seg-btn:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #f8fafc;
+}
+
+.bayisland-clip-seg-btn-active,
+.bayisland-clip-seg-btn-active:hover {
+  background-color: #38bdf8;
+  border: none;
+  color: #090d16;
+  font-weight: 700;
+}
+
+.bayisland-search-entry {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.065);
+  color: #f8fafc;
+  caret-color: #38bdf8;
+  font-size: 12px;
+}
+
+.bayisland-search-entry:focus {
+  border: none;
+  background-color: rgba(255, 255, 255, 0.11);
+}
+
+.bayisland-scroll-view {
+  padding-right: 4px;
+}
+
+.bayisland-list-card {
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.045);
+}
+
+.bayisland-list-card:hover {
+  background-color: rgba(255, 255, 255, 0.085);
+}
+
+.bayisland-list-card-pinned {
+  border: none;
+  background-color: rgba(255, 255, 255, 0.085);
+}
+
+.bayisland-row-main-btn {
+  padding: 2px 4px;
+  border-radius: 8px;
+  border: none;
+  text-align: left;
+}
+
+.bayisland-list-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: #f1f5f9;
+}
+
+.bayisland-color-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: none;
+}
+
+.bayisland-dropzone {
+  border: none;
+  border-radius: 14px;
+  background-color: rgba(255, 255, 255, 0.05);
+  spacing: 4px;
+}
+
+.bayisland-dropzone-active {
+  border: none;
+  background-color: #38bdf8;
+  color: #090d16;
+}
+
+.bayisland-dropzone-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.bayisland-dropzone-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.bayisland-shelf-row {
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.048);
+}
+
+.bayisland-notif-card {
+  padding: 7px 10px;
+  border-radius: 12px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.048);
+}
+
+.bayisland-notif-card:hover {
+  background-color: rgba(255, 255, 255, 0.085);
+}
+
+.bayisland-notif-card-urgent {
+  border: none;
+  background-color: rgba(239, 68, 68, 0.22);
+}
+
+.bayisland-count-pill {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background-color: #38bdf8;
+  color: #090d16;
+  font-size: 10px;
+  font-weight: 700;
+  font-feature-settings: "tnum";
+}

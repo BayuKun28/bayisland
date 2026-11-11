@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="bayisland">
+  <schema id="org.gnome.shell.extensions.bayisland" path="/org/gnome/shell/extensions/bayisland/">
+
+    <key name="pill-style" type="s">
+      <default>'floating'</default>
+      <summary>Island Shape Style</summary>
+      <description>Visual style when docked at the top edge: 'floating' or 'notch'.</description>
+    </key>
+
+    <key name="topbar-collision-mode" type="s">
+      <default>'drop-below'</default>
+      <summary>Top Bar Visibility Behavior</summary>
+      <description>Behavior when GNOME Top Bar is visible: 'drop-below', 'hide-idle', or 'overlay'.</description>
+    </key>
+
+    <key name="top-margin" type="i">
+      <default>6</default>
+      <range min="0" max="48"/>
+      <summary>Top Margin (px)</summary>
+      <description>Vertical offset from the top bezel (or below Top Bar when dropped).</description>
+    </key>
+
+    <key name="hide-in-fullscreen" type="b">
+      <default>false</default>
+      <summary>Hide Completely in Fullscreen</summary>
+      <description>If true, BayIsland hides during fullscreen windows; if false, high-priority transient alerts still appear.</description>
+    </key>
+
+    <key name="show-idle-pill" type="b">
+      <default>false</default>
+      <summary>Show Minimal Idle Pill</summary>
+      <description>Legacy fallback dot when Idle Grab Bar is disabled.</description>
+    </key>
+
+    <key name="idle-handle-enabled" type="b">
+      <default>true</default>
+      <summary>Show Top-Center Idle Grab Handle</summary>
+      <description>Display an unobtrusive thick pill line at top-center when idle so BayIsland can be hovered or clicked anytime.</description>
+    </key>
+
+    <key name="idle-hover-peek" type="b">
+      <default>true</default>
+      <summary>Expand Idle Handle on Hover</summary>
+      <description>Morph the idle grab bar into a compact status peek pill when hovered.</description>
+    </key>
+
+    <key name="idle-hover-dwell-ms" type="i">
+      <default>160</default>
+      <range min="50" max="600"/>
+      <summary>Idle Hover Dwell Delay (ms)</summary>
+      <description>Delay before expanding idle bar on hover to prevent accidental triggers near HideTopBar.</description>
+    </key>
+
+    <key name="openbar-color-sync" type="b">
+      <default>true</default>
+      <summary>Sync Accent Colors with OpenBar</summary>
+      <description>Read OpenBar accent and pill palette settings when OpenBar is active.</description>
+    </key>
+
+    <key name="accent-color" type="s">
+      <default>'#38bdf8'</default>
+      <summary>Custom Accent Color</summary>
+      <description>Solid accent hex color used for active tabs, tiles, controls, and indicators when OpenBar Sync is off or unavailable.</description>
+    </key>
+
+    <key name="enable-osd" type="b">
+      <default>true</default>
+      <summary>Enable OSD Replacement</summary>
+      <description>Intercept GNOME OSD events (volume, brightness, mic mute, caffeine) into BayIsland.</description>
+    </key>
+
+    <key name="enable-mpris" type="b">
+      <default>true</default>
+      <summary>Enable Universal MPRIS Media Controller</summary>
+      <description>Display active media playback and interactive controls inside BayIsland.</description>
+    </key>
+
+    <key name="mpris-hide-delay" type="i">
+      <default>15</default>
+      <range min="0" max="300"/>
+      <summary>Hide Paused Media After (seconds)</summary>
+      <description>Seconds to keep paused media visible before collapsing (0 disables auto-collapse while paused).</description>
+    </key>
+
+    <key name="enable-privacy" type="b">
+      <default>true</default>
+      <summary>Enable Privacy Indicators</summary>
+      <description>Show live camera and microphone active indicators.</description>
+    </key>
+
+    <key name="enable-notifications" type="b">
+      <default>true</default>
+      <summary>Enable Notification Peeking</summary>
+      <description>Display incoming notifications smoothly inside BayIsland while keeping notification history intact.</description>
+    </key>
+
+    <key name="notification-duration" type="i">
+      <default>4000</default>
+      <range min="1500" max="15000"/>
+      <summary>Notification Peek Duration (ms)</summary>
+      <description>Milliseconds to display incoming notification banners before dismissing.</description>
+    </key>
+
+    <key name="enable-power" type="b">
+      <default>true</default>
+      <summary>Enable Power and Charging Events</summary>
+      <description>Animate AC plug/unplug and low battery alerts.</description>
+    </key>
+
+    <key name="enable-timer" type="b">
+      <default>true</default>
+      <summary>Enable Built-in Timer and Pomodoro</summary>
+      <description>Enable countdown timer and Pomodoro counter inside BayIsland.</description>
+    </key>
+
+    <key name="enable-resource-spike" type="b">
+      <default>true</default>
+      <summary>Enable Resource Spike Warning</summary>
+      <description>Warn when sustained CPU or RAM usage exceeds threshold.</description>
+    </key>
+
+    <key name="resource-cpu-threshold" type="i">
+      <default>90</default>
+      <range min="50" max="99"/>
+      <summary>CPU Spike Threshold (%)</summary>
+      <description>Sustained CPU percentage threshold to trigger a warning.</description>
+    </key>
+
+    <key name="resource-ram-threshold" type="i">
+      <default>90</default>
+      <range min="50" max="99"/>
+      <summary>RAM Spike Threshold (%)</summary>
+      <description>Sustained RAM percentage threshold to trigger a warning.</description>
+    </key>
+
+    <key name="enable-dbus-service" type="b">
+      <default>true</default>
+      <summary>Enable D-Bus Service (org.bayisland.Shell)</summary>
+      <description>Expose org.bayisland.Shell on session D-Bus for Terminal Task Done and custom scripts.</description>
+    </key>
+
+    <key name="enable-clipboard" type="b">
+      <default>true</default>
+      <summary>Enable Clipboard History Tab</summary>
+      <description>Record clipboard text history with favorites, search, and click-to-paste inside BayIsland.</description>
+    </key>
+
+    <key name="clipboard-auto-paste" type="b">
+      <default>true</default>
+      <summary>Auto-Paste When Clicking Clipboard Entry</summary>
+      <description>Synthesize paste keystroke after copying a clicked clipboard history item into the active window.</description>
+    </key>
+
+    <key name="clipboard-paste-shortcut" type="s">
+      <default>'shift-insert'</default>
+      <summary>Auto-Paste Keystroke Style</summary>
+      <description>Keystroke synthesized for auto-paste: 'shift-insert' (works in GUI apps and terminals) or 'ctrl-v'.</description>
+    </key>
+
+    <key name="clipboard-ignore-passwords" type="b">
+      <default>true</default>
+      <summary>Ignore Password Manager Clipboard Entries</summary>
+      <description>Skip entries tagged with password-manager privacy MIME hints (x-kde-passwordManagerHint).</description>
+    </key>
+
+    <key name="clipboard-max-items" type="i">
+      <default>60</default>
+      <range min="10" max="200"/>
+      <summary>Maximum Unpinned Clipboard Entries</summary>
+      <description>Maximum number of unpinned clipboard history items retained on disk.</description>
+    </key>
+
+    <key name="enable-shelf" type="b">
+      <default>true</default>
+      <summary>Enable Drag and Drop File Shelf</summary>
+      <description>Stage temporary files via Wayland drag-and-drop bridge or instant clipboard file copy.</description>
+    </key>
+
+    <key name="shelf-drag-reveal" type="b">
+      <default>true</default>
+      <summary>Auto-Reveal Drop Zone When Dragging Files</summary>
+      <description>Expand BayIsland into a Drop Catcher when dragging files near the top-center zone.</description>
+    </key>
+
+    <key name="shelf-screenshot-auto-stash" type="b">
+      <default>true</default>
+      <summary>Auto-Stash New Screenshots to Shelf</summary>
+      <description>Automatically stage newly saved GNOME screenshots into the Shelf tab for instant drag/paste.</description>
+    </key>
+
+    <key name="enable-quick-actions" type="b">
+      <default>true</default>
+      <summary>Enable Quick Actions and Calendar Hub</summary>
+      <description>Enable Clock, Calendar, Wi-Fi, Bluetooth, Night Light, DND, and Screenshot controls inside Home tab.</description>
+    </key>
+
+    <key name="tab-order" type="as">
+      <default>['home', 'media', 'power', 'clipboard', 'shelf']</default>
+      <summary>Hub Tab Order</summary>
+      <description>Display order of the 5 expanded hub tabs: home, media, power, clipboard, and shelf.</description>
+    </key>
+
+    <key name="expanded-default-tab" type="s">
+      <default>'auto'</default>
+      <summary>Default Expanded Hub Tab</summary>
+      <description>Default tab when opening BayIsland: 'auto', 'home', 'media', 'power', 'clipboard', or 'shelf'.</description>
+    </key>
+
+    <key name="toggle-expand-shortcut" type="as">
+      <default>['&lt;Super&gt;&lt;Alt&gt;i']</default>
+      <summary>Toggle Expanded View Shortcut</summary>
+      <description>Keyboard shortcut to toggle the BayIsland expanded hub.</description>
+    </key>
+
+    <key name="quick-timer-shortcut" type="as">
+      <default>['&lt;Super&gt;&lt;Alt&gt;t']</default>
+      <summary>Quick Timer / Pomodoro Shortcut</summary>
+      <description>Keyboard shortcut to open Home tab timer controls.</description>
+    </key>
+
+    <key name="quick-clipboard-shortcut" type="as">
+      <default>['&lt;Super&gt;&lt;Alt&gt;v']</default>
+      <summary>Quick Clipboard History Shortcut</summary>
+      <description>Keyboard shortcut to open BayIsland directly to the Clipboard History tab.</description>
+    </key>
+
+    <key name="quick-shelf-shortcut" type="as">
+      <default>['&lt;Super&gt;&lt;Alt&gt;d']</default>
+      <summary>Quick File Shelf Shortcut</summary>
+      <description>Keyboard shortcut to open BayIsland directly to the Drag and Drop Shelf tab.</description>
+    </key>
+
+  </schema>
+</schemalist>

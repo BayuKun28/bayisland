@@ -1,0 +1,12 @@
+{
+  "uuid": "bayisland@baydev",
+  "name": "BayIsland",
+  "description": "Priority-driven Dynamic Island & Customizable 5-Tab Productivity Hub for GNOME Shell (Ubuntu 24.04 Wayland) with Idle Grab Handle, Hover Peek, Quick Actions, Calendar, Merged Notifications, Power Telemetry, MPRIS Media, Clipboard History, Drag & Drop File Shelf, OSD replacement, and D-Bus task alerts.",
+  "shell-version": [
+    "46"
+  ],
+  "settings-schema": "org.gnome.shell.extensions.bayisland",
+  "gettext-domain": "bayisland",
+  "url": "https://github.com/BayuKun28/bayisland",
+  "version": 2
+}
