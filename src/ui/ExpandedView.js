@@ -262,6 +262,7 @@ export class ExpandedView {
             x_expand: true,
             y_expand: true,
             reactive: false,
+            clip_to_allocation: true,
             x_align: Clutter.ActorAlign.FILL,
             y_align: Clutter.ActorAlign.FILL,
         });
@@ -326,6 +327,14 @@ export class ExpandedView {
 
         const prevTab = this._currentTabId;
         this._currentTabId = normalized;
+
+        const order = normalizeTabOrder(model?.tabOrder);
+        const prevIdx = order.indexOf(prevTab);
+        const nextIdx = order.indexOf(normalized);
+        let dir = 0;
+        if (prevIdx !== -1 && nextIdx !== -1 && prevIdx !== nextIdx)
+            dir = nextIdx > prevIdx ? 1 : -1;
+
         if (palette)
             this._lastPalette = palette;
         const pal = palette ?? this._lastPalette;
@@ -366,6 +375,18 @@ export class ExpandedView {
                 this._tabBadges[normalized].label.style = `background-color: ${activeBadgeBg}; color: ${fg};`;
                 this._tabBadges[normalized].active = true;
             }
+
+            try {
+                nextBtn.set_pivot_point(0.5, 0.5);
+                nextBtn.scale_x = 0.94;
+                nextBtn.scale_y = 0.94;
+                nextBtn.ease({
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    duration: 200,
+                    mode: Clutter.AnimationMode.EASE_OUT_BACK,
+                });
+            } catch {}
         }
 
         // 2. Destroy old tab instance safely
@@ -376,15 +397,23 @@ export class ExpandedView {
             this._activeTabInstance = null;
         }
 
-        // 3. Mount new tab with quick, smooth fade-in
+        // 3. Mount new tab with bouncing, smooth slide-in
         const snaps = snapshots ?? {};
         this._mountActiveTab(normalized, model, pal, snaps);
         const child = this._bodyBin.get_child();
         if (child) {
+            const startX = dir * 48;
+            child.remove_all_transitions();
+            child.translation_x = startX;
             child.opacity = 0;
             child.ease({
+                translation_x: 0,
+                duration: 220,
+                mode: Clutter.AnimationMode.EASE_OUT_BACK,
+            });
+            child.ease({
                 opacity: 255,
-                duration: 110,
+                duration: 160,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
             });
         }
