@@ -343,12 +343,16 @@ export class IslandContainer {
 
             if (model.state === IslandState.TRANSIENT_BANNER) {
                 if (btn === Clutter.BUTTON_SECONDARY || btn === Clutter.BUTTON_MIDDLE) {
-                    this._priority.dismissTransient(model.transient?.id);
+                    this._transientView?.animateDismiss?.(() => {
+                        this._priority.dismissTransient(model.transient?.id);
+                    }) || this._priority.dismissTransient(model.transient?.id);
                     return Clutter.EVENT_STOP;
                 }
                 if (btn === Clutter.BUTTON_PRIMARY && typeof model.transient?.onActivate === 'function') {
                     model.transient.onActivate();
-                    this._priority.dismissTransient(model.transient?.id);
+                    this._transientView?.animateDismiss?.(() => {
+                        this._priority.dismissTransient(model.transient?.id);
+                    }) || this._priority.dismissTransient(model.transient?.id);
                     return Clutter.EVENT_STOP;
                 }
                 return Clutter.EVENT_STOP;

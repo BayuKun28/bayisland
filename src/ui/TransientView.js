@@ -65,6 +65,27 @@ export class TransientView {
         this._hasBody = false;
         this._hasSource = false;
         this._actionSig = '';
+        this._isDismissing = false;
+    }
+
+    animateDismiss(onComplete) {
+        if (this._isDismissing)
+            return;
+        this._isDismissing = true;
+        if (!this._root) {
+            onComplete?.();
+            return;
+        }
+
+        this._root.ease({
+            translation_x: 45,
+            opacity: 0,
+            duration: 130,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            onComplete: () => {
+                onComplete?.();
+            },
+        });
     }
 
     _getMonitorBounds() {
@@ -281,6 +302,7 @@ export class TransientView {
         this._hasSource = showSource;
         this._hasActions = actions.length > 0;
         this._actionSig = actions.map(a => a?.label || '').join('|');
+        this._isDismissing = false;
         this._isRichLayout = Boolean(
             cleanBody || actions.length > 0 || showSource || cleanTitle.length > 34 || t.kind === 'notification' || t.kind === 'alarm'
         );
@@ -488,11 +510,15 @@ export class TransientView {
                     can_focus: false,
                 });
                 btn.connect('clicked', () => {
-                    try {
-                        act.callback?.();
-                    } finally {
-                        this._onDismiss?.(t.id);
-                    }
+                    if (this._isDismissing)
+                        return;
+                    this.animateDismiss(() => {
+                        try {
+                            act.callback?.();
+                        } finally {
+                            this._onDismiss?.(t.id);
+                        }
+                    });
                 });
                 singleRow.add_child(btn);
                 this._actionItems.push(btn);
@@ -514,7 +540,13 @@ export class TransientView {
                     icon_size: 13,
                 }),
             });
-            closeBtn.connect('clicked', () => this._onDismiss?.(t.id));
+            closeBtn.connect('clicked', () => {
+                if (this._isDismissing)
+                    return;
+                this.animateDismiss(() => {
+                    this._onDismiss?.(t.id);
+                });
+            });
             box.add_child(closeBtn);
         }
 

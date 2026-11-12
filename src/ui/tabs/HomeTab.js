@@ -123,6 +123,7 @@ export class HomeTab {
         this._clearAllBtn = null;
         this._lastHistory = null;
         this._lastPalette = null;
+        this._isClearingFeed = false;
     }
 
     render(model, palette, quickSnapshot, notifHistory) {
@@ -695,7 +696,39 @@ export class HomeTab {
             can_focus: false,
             visible: false,
         });
-        this._clearAllBtn.connect('clicked', () => this._cb.onNotifClearAll?.());
+        this._clearAllBtn.connect('clicked', () => {
+            if (this._isClearingFeed)
+                return;
+            this._isClearingFeed = true;
+            this._clearAllBtn.reactive = false;
+
+            const children = this._feedBox ? this._feedBox.get_children() : [];
+            if (!children.length) {
+                this._isClearingFeed = false;
+                this._cb.onNotifClearAll?.();
+                return;
+            }
+
+            let pending = children.length;
+            const onDone = () => {
+                pending--;
+                if (pending <= 0) {
+                    this._isClearingFeed = false;
+                    this._cb.onNotifClearAll?.();
+                }
+            };
+
+            for (let i = 0; i < children.length; i++) {
+                const child = children[i];
+                child.ease({
+                    translation_x: 70,
+                    opacity: 0,
+                    duration: 160 + Math.min(60, i * 20),
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                    onComplete: onDone,
+                });
+            }
+        });
         header.add_child(this._clearAllBtn);
         card.add_child(header);
 
@@ -742,8 +775,10 @@ export class HomeTab {
             this._notifCountPill.style = `background-color: ${acc}; color: ${fg};`;
             this._notifCountPill.visible = totalCount > 0;
         }
-        if (this._clearAllBtn)
+        if (this._clearAllBtn) {
             this._clearAllBtn.visible = totalCount > 0;
+            this._clearAllBtn.reactive = true;
+        }
 
         if (totalCount === 0) {
             const empty = new St.BoxLayout({
@@ -763,7 +798,13 @@ export class HomeTab {
                 text: 'All caught up',
                 style_class: 'bayisland-muted-sm',
             }));
+            empty.opacity = 0;
             this._feedBox.add_child(empty);
+            empty.ease({
+                opacity: 255,
+                duration: 140,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
             return;
         }
 
@@ -853,7 +894,18 @@ export class HomeTab {
             y_align: Clutter.ActorAlign.CENTER,
             child: new St.Icon({ icon_name: 'window-close-symbolic', icon_size: 11 }),
         });
-        closeBtn.connect('clicked', () => this._cb.onNotifDismiss?.(n.id));
+        closeBtn.connect('clicked', () => {
+            closeBtn.reactive = false;
+            card.ease({
+                translation_x: 60,
+                opacity: 0,
+                duration: 150,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                onComplete: () => {
+                    this._cb.onNotifDismiss?.(n.id);
+                },
+            });
+        });
         topRow.add_child(closeBtn);
         card.add_child(topRow);
 
@@ -979,7 +1031,18 @@ export class HomeTab {
             can_focus: false,
             child: new St.Icon({ icon_name: 'window-close-symbolic', icon_size: 12 }),
         });
-        delBtn.connect('clicked', () => this._cb.onNotifDismiss?.(t.id));
+        delBtn.connect('clicked', () => {
+            delBtn.reactive = false;
+            card.ease({
+                translation_x: 60,
+                opacity: 0,
+                duration: 150,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                onComplete: () => {
+                    this._cb.onNotifDismiss?.(t.id);
+                },
+            });
+        });
         card.add_child(delBtn);
         return card;
     }
