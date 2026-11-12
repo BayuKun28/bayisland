@@ -909,7 +909,7 @@ export class HomeTab {
 
             let actRow = new St.BoxLayout({ style: 'spacing: 5px;' });
             let usedW = 0;
-            const maxRowW = 212;
+            const maxRowW = 280;
 
             for (const act of n.actions) {
                 const aBtn = new St.Button({

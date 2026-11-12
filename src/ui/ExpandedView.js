@@ -45,7 +45,7 @@ export class ExpandedView {
 
     getPreferredSize(model = null, snapshots = null) {
         const monitor = Main.layoutManager.primaryMonitor ?? { width: 1280, height: 800 };
-        const width = Math.min(660, Math.max(540, monitor.width - 32));
+        const width = Math.min(730, Math.max(540, monitor.width - 32));
         const maxH = Math.max(300, monitor.height - 84);
         const tab = model?.tab || 'home';
 
