@@ -100,6 +100,23 @@
   box-shadow: 0 22px 56px rgba(0, 0, 0, 0.72) !important;
 }
 
+/* Corner squircle morphing classes for smooth pill <-> modal transition */
+.bayisland-shell.bayisland-corner-morph-stage1 {
+  border-radius: 64px !important;
+}
+
+.bayisland-shell.bayisland-corner-morph-stage2 {
+  border-radius: 42px !important;
+}
+
+.bayisland-shell.bayisland-corner-morph-stage3 {
+  border-radius: 32px !important;
+}
+
+.bayisland-shell.bayisland-corner-morph-pill {
+  border-radius: 999px !important;
+}
+
 .bayisland-content-bin {
   padding: 0px;
 }

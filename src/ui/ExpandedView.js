@@ -401,7 +401,8 @@ export class ExpandedView {
         const snaps = snapshots ?? {};
         this._mountActiveTab(normalized, model, pal, snaps);
         const child = this._bodyBin.get_child();
-        if (child) {
+        const handledStagger = this._activeTabInstance?.animateEntrance?.(dir);
+        if (!handledStagger && child) {
             const startX = dir * 48;
             child.remove_all_transitions();
             child.translation_x = startX;

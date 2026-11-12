@@ -68,7 +68,43 @@ export class TransientView {
         this._isDismissing = false;
     }
 
-    animateDismiss(onComplete) {
+    setSwipeOffset(dx, dy) {
+        if (!this._root || this._isDismissing)
+            return;
+        // Rubber-band resistance for dragging leftwards or downwards
+        const effectiveDx = dx < 0 ? dx * 0.28 : dx;
+        const effectiveDy = dy > 0 ? dy * 0.28 : dy;
+
+        this._root.remove_all_transitions();
+        this._root.translation_x = effectiveDx;
+        this._root.translation_y = effectiveDy;
+
+        // Graceful alpha falloff with distance
+        const dist = Math.hypot(Math.max(0, effectiveDx), Math.min(0, -effectiveDy));
+        const alpha = Math.max(0.18, 1.0 - Math.min(1.0, dist / 180));
+        this._root.opacity = Math.round(255 * alpha);
+    }
+
+    resetSwipe(snapBack = true) {
+        if (!this._root || this._isDismissing)
+            return;
+        this._root.remove_all_transitions();
+        if (snapBack) {
+            this._root.ease({
+                translation_x: 0,
+                translation_y: 0,
+                opacity: 255,
+                duration: 180,
+                mode: Clutter.AnimationMode.EASE_OUT_BACK,
+            });
+        } else {
+            this._root.translation_x = 0;
+            this._root.translation_y = 0;
+            this._root.opacity = 255;
+        }
+    }
+
+    animateDismiss(onComplete, dx = 0, dy = 0) {
         if (this._isDismissing)
             return;
         this._isDismissing = true;
@@ -77,8 +113,24 @@ export class TransientView {
             return;
         }
 
+        this._root.remove_all_transitions();
+        const currentX = this._root.translation_x || 0;
+        const currentY = this._root.translation_y || 0;
+
+        let targetX = currentX;
+        let targetY = currentY;
+
+        if (dy < -20) {
+            targetY = Math.min(-50, currentY - 35);
+        } else if (dx > 20 || currentX > 20) {
+            targetX = Math.max(65, currentX + 50);
+        } else {
+            targetX = 45;
+        }
+
         this._root.ease({
-            translation_x: 45,
+            translation_x: targetX,
+            translation_y: targetY,
             opacity: 0,
             duration: 130,
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,

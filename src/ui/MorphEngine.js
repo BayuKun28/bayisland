@@ -24,6 +24,7 @@ export class MorphEngine {
         this._morphSeq = 0;
         this._pendingSettledCb = null;
         this._pendingSettledSeq = 0;
+        this._cornerTimerId = 0;
 
         this._shellDestroyId = this._shell.connect('destroy', () => {
             this._onActorsDestroyed();
@@ -43,9 +44,81 @@ export class MorphEngine {
         this._morphSeq++;
         this._pendingSettledCb = null;
         this._stopEqLoop();
+        this._clearCornerStages();
         this._eqBars = [];
         this._shell = null;
         this._contentBin = null;
+    }
+
+    _clearCornerStages() {
+        if (this._cornerTimerId) {
+            this._timers.clear(this._cornerTimerId);
+            this._cornerTimerId = 0;
+        }
+        if (!this._shell)
+            return;
+        for (const cls of ['bayisland-corner-morph-stage1', 'bayisland-corner-morph-stage2', 'bayisland-corner-morph-stage3', 'bayisland-corner-morph-pill']) {
+            if (this._shell.has_style_class_name?.(cls))
+                this._shell.remove_style_class_name(cls);
+        }
+    }
+
+    _applyCornerStage(stageClass) {
+        if (!this._shell)
+            return;
+        for (const cls of ['bayisland-corner-morph-stage1', 'bayisland-corner-morph-stage2', 'bayisland-corner-morph-stage3', 'bayisland-corner-morph-pill']) {
+            if (cls === stageClass) {
+                if (!this._shell.has_style_class_name?.(cls))
+                    this._shell.add_style_class_name(cls);
+            } else if (this._shell.has_style_class_name?.(cls)) {
+                this._shell.remove_style_class_name(cls);
+            }
+        }
+    }
+
+    _animateSquircleExpand() {
+        this._clearCornerStages();
+        this._applyCornerStage('bayisland-corner-morph-stage1');
+        let stage = 1;
+        this._cornerTimerId = this._timers.setInterval(65, () => {
+            if (this._destroyed || !this._shell)
+                return false;
+            stage++;
+            if (stage === 2) {
+                this._applyCornerStage('bayisland-corner-morph-stage2');
+                return true;
+            } else if (stage === 3) {
+                this._applyCornerStage('bayisland-corner-morph-stage3');
+                return true;
+            } else {
+                this._clearCornerStages();
+                return false;
+            }
+        });
+    }
+
+    _animateSquircleCollapse() {
+        this._clearCornerStages();
+        this._applyCornerStage('bayisland-corner-morph-stage3');
+        let stage = 3;
+        this._cornerTimerId = this._timers.setInterval(38, () => {
+            if (this._destroyed || !this._shell)
+                return false;
+            stage--;
+            if (stage === 2) {
+                this._applyCornerStage('bayisland-corner-morph-stage2');
+                return true;
+            } else if (stage === 1) {
+                this._applyCornerStage('bayisland-corner-morph-stage1');
+                return true;
+            } else if (stage === 0) {
+                this._applyCornerStage('bayisland-corner-morph-pill');
+                return true;
+            } else {
+                this._clearCornerStages();
+                return false;
+            }
+        });
     }
 
     isVisible() {
@@ -170,6 +243,7 @@ export class MorphEngine {
 
         if (!visible) {
             this._pendingSettledCb = null;
+            this._clearCornerStages();
             if (!this._visible) {
                 this._shell.opacity = 0;
                 this._shell.hide();
@@ -229,6 +303,9 @@ export class MorphEngine {
                 this._contentBin.opacity = 255;
             }
 
+            if (isLargeTarget)
+                this._animateSquircleExpand();
+
             this._shell.ease({
                 opacity: 255,
                 width,
@@ -240,10 +317,13 @@ export class MorphEngine {
                     ? Clutter.AnimationMode.EASE_OUT_CUBIC
                     : Clutter.AnimationMode.EASE_OUT_BACK,
                 onComplete: () => {
-                    if (seq === this._morphSeq && this._pendingSettledCb) {
-                        const cb = this._pendingSettledCb;
-                        this._pendingSettledCb = null;
-                        cb();
+                    if (seq === this._morphSeq) {
+                        this._clearCornerStages();
+                        if (this._pendingSettledCb) {
+                            const cb = this._pendingSettledCb;
+                            this._pendingSettledCb = null;
+                            cb();
+                        }
                     }
                     if (this._eqActive)
                         this._startEqLoop();
@@ -259,6 +339,9 @@ export class MorphEngine {
             const geomChanged = sizeChanged || posChanged;
 
             if (geomChanged) {
+                if (isLargeTarget && isExpanding)
+                    this._animateSquircleExpand();
+
                 this._shell.remove_all_transitions();
                 const easeTarget = sizeChanged
                     ? { width, height, x, y, opacity: 255 }
@@ -270,10 +353,13 @@ export class MorphEngine {
                         ? Clutter.AnimationMode.EASE_OUT_CUBIC
                         : Clutter.AnimationMode.EASE_OUT_QUAD,
                     onComplete: () => {
-                        if (seq === this._morphSeq && this._pendingSettledCb) {
-                            const cb = this._pendingSettledCb;
-                            this._pendingSettledCb = null;
-                            cb();
+                        if (seq === this._morphSeq) {
+                            this._clearCornerStages();
+                            if (this._pendingSettledCb) {
+                                const cb = this._pendingSettledCb;
+                                this._pendingSettledCb = null;
+                                cb();
+                            }
                         }
                     },
                 });
@@ -350,6 +436,8 @@ export class MorphEngine {
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
         });
 
+        this._animateSquircleCollapse();
+
         this._shell.remove_all_transitions();
         this._shell.ease({
             x: shrinkRect.x,
@@ -360,6 +448,7 @@ export class MorphEngine {
             duration: 145,
             mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
             onComplete: () => {
+                this._clearCornerStages();
                 if (this._destroyed || !this._shell || !this._contentBin || seq !== this._morphSeq || !this._visible) {
                     this._collapsing = false;
                     return;
@@ -443,6 +532,7 @@ export class MorphEngine {
         this._collapsing = false;
         this._pendingSettledCb = null;
         this._stopEqLoop();
+        this._clearCornerStages();
         this._eqBars = [];
 
         if (this._shellDestroyId && this._shell) {

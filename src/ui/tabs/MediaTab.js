@@ -50,6 +50,8 @@ export class MediaTab {
         this._lastVolFrac = 0;
         this._volPctLbl = null;
         this._devCol = null;
+        this._playerCard = null;
+        this._audioCard = null;
     }
 
     render(model, palette, quickSnapshot) {
@@ -76,6 +78,7 @@ export class MediaTab {
             x_expand: false,
             y_expand: true,
         });
+        this._playerCard = playerCard;
 
         if (!media?.active) {
             const empty = new St.BoxLayout({
@@ -440,9 +443,52 @@ export class MediaTab {
         devScroll.child = this._devCol;
         audioCard.add_child(devScroll);
 
+        this._audioCard = audioCard;
         root.add_child(audioCard);
         this._root = root;
         return root;
+    }
+
+    animateEntrance(dir = 0) {
+        if (!dir)
+            return false;
+        const cards = [this._playerCard, this._audioCard].filter(Boolean);
+        const startX = dir * 42;
+        cards.forEach((card, idx) => {
+            card.remove_all_transitions();
+            card.translation_x = startX;
+            card.opacity = 0;
+            const delay = idx * 28;
+            if (delay > 0) {
+                GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
+                    if (card && card.get_stage?.()) {
+                        card.ease({
+                            translation_x: 0,
+                            duration: 220,
+                            mode: Clutter.AnimationMode.EASE_OUT_BACK,
+                        });
+                        card.ease({
+                            opacity: 255,
+                            duration: 160,
+                            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                        });
+                    }
+                    return GLib.SOURCE_REMOVE;
+                });
+            } else {
+                card.ease({
+                    translation_x: 0,
+                    duration: 220,
+                    mode: Clutter.AnimationMode.EASE_OUT_BACK,
+                });
+                card.ease({
+                    opacity: 255,
+                    duration: 160,
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                });
+            }
+        });
+        return true;
     }
 
     _rebuildDevCol(qa, palette = this._lastPalette) {
@@ -493,7 +539,7 @@ export class MediaTab {
                 badgeBg = 'rgba(56, 189, 248, 0.18)';
                 badgeFg = '#38bdf8';
             } else if (dType === 'dac' || /dac|ka1|fiio|hidizs|moondrop|soundcard/i.test(lblLower)) {
-                badgeText = 'DAC';
+                badgeText = dev.sampleRate ? `${dev.sampleRate} DAC` : 'DAC';
                 badgeBg = 'rgba(167, 139, 250, 0.18)';
                 badgeFg = '#a78bfa';
             } else if (dType === 'iem' || /iem|in-ear/i.test(lblLower)) {
@@ -593,6 +639,8 @@ export class MediaTab {
         this._volCanvas = null;
         this._volPctLbl = null;
         this._devCol = null;
+        this._playerCard = null;
+        this._audioCard = null;
         this._root = null;
     }
 }

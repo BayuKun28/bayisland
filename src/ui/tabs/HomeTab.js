@@ -124,6 +124,10 @@ export class HomeTab {
         this._lastHistory = null;
         this._lastPalette = null;
         this._isClearingFeed = false;
+        this._heroRow = null;
+        this._qaCard = null;
+        this._timerCard = null;
+        this._feedCard = null;
     }
 
     render(model, palette, quickSnapshot, notifHistory) {
@@ -246,6 +250,7 @@ export class HomeTab {
         }
 
         this._refreshAgenda();
+        this._heroRow = heroRow;
         leftCol.add_child(heroRow);
         leftCol.add_child(new St.Widget({ y_expand: true }));
 
@@ -256,6 +261,7 @@ export class HomeTab {
             x_expand: true,
             style: 'spacing: 8px; padding: 10px 12px;',
         });
+        this._qaCard = qaCard;
 
         const qaHeader = new St.BoxLayout({
             x_expand: true,
@@ -368,8 +374,10 @@ export class HomeTab {
             x_expand: true,
             y_expand: true,
         });
-        rightCol.add_child(this._buildTimerCard(model.persistent.timer, palette));
-        rightCol.add_child(this._buildFeedCard(palette));
+        this._timerCard = this._buildTimerCard(model.persistent.timer, palette);
+        this._feedCard = this._buildFeedCard(palette);
+        rightCol.add_child(this._timerCard);
+        rightCol.add_child(this._feedCard);
         root.add_child(rightCol);
 
         this._root = root;
@@ -389,6 +397,47 @@ export class HomeTab {
         });
 
         return root;
+    }
+
+    animateEntrance(dir = 0) {
+        if (!dir)
+            return false;
+        const cards = [this._heroRow, this._qaCard, this._timerCard, this._feedCard].filter(Boolean);
+        const startX = dir * 42;
+        cards.forEach((card, idx) => {
+            card.remove_all_transitions();
+            card.translation_x = startX;
+            card.opacity = 0;
+            const delay = idx * 22;
+            if (delay > 0) {
+                this._timers.setTimeout(delay, () => {
+                    if (card && card.get_stage?.()) {
+                        card.ease({
+                            translation_x: 0,
+                            duration: 220,
+                            mode: Clutter.AnimationMode.EASE_OUT_BACK,
+                        });
+                        card.ease({
+                            opacity: 255,
+                            duration: 160,
+                            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                        });
+                    }
+                });
+            } else {
+                card.ease({
+                    translation_x: 0,
+                    duration: 220,
+                    mode: Clutter.AnimationMode.EASE_OUT_BACK,
+                });
+                card.ease({
+                    opacity: 255,
+                    duration: 160,
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                });
+            }
+        });
+        return true;
     }
 
     _scheduleCalendarStyle() {
@@ -1134,6 +1183,10 @@ export class HomeTab {
         this._feedBox = null;
         this._notifCountPill = null;
         this._clearAllBtn = null;
+        this._heroRow = null;
+        this._qaCard = null;
+        this._timerCard = null;
+        this._feedCard = null;
         this._root = null;
     }
 

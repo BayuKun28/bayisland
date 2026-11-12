@@ -200,6 +200,7 @@ export class IslandContainer {
         this._targetWidth = 172;
         this._targetHeight = 22;
         this._inRenderModel = false;
+        this._transientDrag = null;
 
         this._contentBin = new BayIslandViewport({
             style_class: 'bayisland-content-bin',
@@ -553,7 +554,94 @@ export class IslandContainer {
 
     _onShellCapturedEvent(event) {
         const model = this._priority.getModel();
-        if (!model || model.state !== IslandState.EXPANDED_MODAL || model.tab !== 'shelf')
+        if (!model)
+            return Clutter.EVENT_PROPAGATE;
+
+        // Interactive pointer swipe / flick to dismiss transient notification banner
+        if (model.state === IslandState.TRANSIENT_BANNER) {
+            const type = event.type();
+            if (!event.get_coords)
+                return Clutter.EVENT_PROPAGATE;
+
+            const [ex, ey] = event.get_coords();
+            const inShell = this._isCoordsInShell(ex, ey);
+
+            if (type === Clutter.EventType.BUTTON_PRESS || type === Clutter.EventType.TOUCH_BEGIN) {
+                if (!inShell)
+                    return Clutter.EVENT_PROPAGATE;
+                const btn = event.get_button?.() ?? 1;
+                if (btn !== Clutter.BUTTON_PRIMARY && type !== Clutter.EventType.TOUCH_BEGIN)
+                    return Clutter.EVENT_PROPAGATE;
+
+                let src = global.stage?.get_event_actor?.(event) ?? event.get_source?.();
+                let isInteractive = false;
+                while (src && src !== this._shell) {
+                    if (src instanceof St.Button || src instanceof St.Entry) {
+                        isInteractive = true;
+                        break;
+                    }
+                    src = src.get_parent?.();
+                }
+                if (isInteractive)
+                    return Clutter.EVENT_PROPAGATE;
+
+                this._transientDrag = {
+                    startX: ex,
+                    startY: ey,
+                    isDragging: false,
+                    lastDx: 0,
+                    lastDy: 0,
+                };
+                return Clutter.EVENT_PROPAGATE;
+            }
+
+            if (type === Clutter.EventType.MOTION) {
+                if (!this._transientDrag)
+                    return Clutter.EVENT_PROPAGATE;
+
+                const dx = ex - this._transientDrag.startX;
+                const dy = ey - this._transientDrag.startY;
+                this._transientDrag.lastDx = dx;
+                this._transientDrag.lastDy = dy;
+
+                if (!this._transientDrag.isDragging) {
+                    if (dx > 8 || dx < -14 || dy < -8 || dy > 14)
+                        this._transientDrag.isDragging = true;
+                }
+
+                if (this._transientDrag.isDragging) {
+                    this._transientView?.setSwipeOffset?.(dx, dy);
+                    return Clutter.EVENT_STOP;
+                }
+                return Clutter.EVENT_PROPAGATE;
+            }
+
+            if (type === Clutter.EventType.BUTTON_RELEASE || type === Clutter.EventType.TOUCH_END) {
+                if (!this._transientDrag)
+                    return Clutter.EVENT_PROPAGATE;
+
+                const drag = this._transientDrag;
+                this._transientDrag = null;
+
+                if (drag.isDragging) {
+                    const dx = drag.lastDx;
+                    const dy = drag.lastDy;
+                    if (dx > 60 || dy < -30) {
+                        this._transientView?.animateDismiss?.(() => {
+                            this._priority.dismissTransient(model.transient?.id);
+                        }, dx, dy) || this._priority.dismissTransient(model.transient?.id);
+                    } else {
+                        this._transientView?.resetSwipe?.(true);
+                    }
+                    return Clutter.EVENT_STOP;
+                }
+                return Clutter.EVENT_PROPAGATE;
+            }
+
+            return Clutter.EVENT_PROPAGATE;
+        }
+
+        if (model.state !== IslandState.EXPANDED_MODAL || model.tab !== 'shelf')
             return Clutter.EVENT_PROPAGATE;
 
         const type = event.type();
@@ -1607,6 +1695,7 @@ export class IslandContainer {
 
     destroy() {
         this._destroying = true;
+        this._transientDrag = null;
         this._topBar?.setPanelHold(false);
         this._topBar?.setSlotReservation({ active: false });
         this._clearHoverTimers();

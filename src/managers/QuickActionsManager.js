@@ -40,7 +40,31 @@ function getDeviceDisplayName(dev) {
     return desc || 'Headphones';
 }
 
-function classifyAudioDevice(dev) {
+function formatSampleSpec(sampleSpec) {
+    if (!sampleSpec)
+        return null;
+    const match = sampleSpec.match(/(s\d+le|float\d+le)?\s*(\d+ch)?\s*(\d+)Hz/i);
+    if (!match)
+        return null;
+    const formatRaw = match[1] || '';
+    const rateHz = parseInt(match[3], 10);
+    const rateKhz = rateHz >= 1000 ? `${rateHz / 1000}kHz` : `${rateHz}Hz`;
+    let bits = '';
+    if (formatRaw.startsWith('s')) {
+        const b = parseInt(formatRaw.slice(1), 10);
+        if (b)
+            bits = `${b}-bit`;
+    } else if (formatRaw.startsWith('float')) {
+        bits = '32-bit float';
+    }
+    return {
+        rate: rateKhz,
+        bits,
+        summary: bits ? `${rateKhz} / ${bits}` : rateKhz,
+    };
+}
+
+function classifyAudioDevice(dev, telemetry = null) {
     const desc = (dev.get_description?.() || '').toLowerCase();
     const origin = (dev.get_origin?.() || '').toLowerCase();
     const port = (dev.get_port?.() || '').toLowerCase();
@@ -71,11 +95,15 @@ function classifyAudioDevice(dev) {
         /dac|fiio|moondrop|hifiman|audioquest|creative|focusrite|shanling|topping|hiby|ibasso|soundcard|hi-res/i.test(origin);
 
     if (isDac) {
+        const body = telemetry?.summary
+            ? `DAC Connected • Hi-Res ${telemetry.summary}`
+            : 'DAC Connected • Hi-Res Audio';
         return {
             type: 'dac',
-            body: 'DAC Connected • Hi-Res Audio',
+            body,
             icon: 'audio-card-symbolic',
             iconColor: '#a78bfa',
+            telemetry,
         };
     }
 
@@ -163,6 +191,7 @@ export class QuickActionsManager extends Signals.EventEmitter {
         this._bootstrapped = false;
         this._knownOutputIds = new Set();
         this._lastAlertTime = new Map();
+        this._sinkTelemetryMap = new Map();
 
         this._state = {
             wifiAvailable: false,
@@ -675,8 +704,74 @@ export class QuickActionsManager extends Signals.EventEmitter {
         }
     }
 
+    _querySinkTelemetry() {
+        try {
+            const proc = new Gio.Subprocess({
+                argv: ['pactl', 'list', 'sinks', 'short'],
+                flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE,
+            });
+            proc.init(null);
+            proc.communicate_utf8_async(null, null, (p, res) => {
+                try {
+                    const [, stdout] = p.communicate_utf8_finish(res);
+                    if (!stdout)
+                        return;
+                    const lines = stdout.split('\n');
+                    let changed = false;
+                    for (const line of lines) {
+                        const parts = line.split('\t');
+                        if (parts.length >= 4) {
+                            const sinkId = parseInt(parts[0], 10);
+                            const sinkName = parts[1]?.trim();
+                            const sampleSpec = parts[3]?.trim();
+                            const parsed = formatSampleSpec(sampleSpec);
+                            if (parsed) {
+                                if (Number.isFinite(sinkId))
+                                    this._sinkTelemetryMap.set(sinkId, parsed);
+                                if (sinkName)
+                                    this._sinkTelemetryMap.set(sinkName, parsed);
+                                changed = true;
+                            }
+                        }
+                    }
+                    if (changed)
+                        this._syncAudioDeviceList();
+                } catch {
+                    // Ignore async subprocess finish errors
+                }
+            });
+        } catch {
+            // pactl not available or spawn failed
+        }
+    }
+
+    _getDevTelemetry(dev) {
+        if (!dev)
+            return null;
+        const id = dev.get_id?.();
+        if (id !== null && id !== undefined && this._sinkTelemetryMap.has(id))
+            return this._sinkTelemetryMap.get(id);
+
+        const streamId = dev.get_stream_id?.();
+        if (streamId !== null && streamId !== undefined && this._sinkTelemetryMap.has(streamId))
+            return this._sinkTelemetryMap.get(streamId);
+
+        const stream = this._mixer?.lookup_stream_id?.(streamId);
+        const streamName = stream?.get_name?.();
+        if (streamName && this._sinkTelemetryMap.has(streamName))
+            return this._sinkTelemetryMap.get(streamName);
+
+        const origin = (dev.get_origin?.() || '').toLowerCase();
+        for (const [key, val] of this._sinkTelemetryMap.entries()) {
+            if (typeof key === 'string' && origin && (origin.includes(key.toLowerCase()) || key.toLowerCase().includes(origin)))
+                return val;
+        }
+        return null;
+    }
+
     _rebuildAudioDevices() {
         this._outputs.clear();
+        this._querySinkTelemetry();
         if (!this._mixer || this._mixer.get_state() !== Gvc.MixerControlState.READY)
             return;
 
@@ -705,6 +800,7 @@ export class QuickActionsManager extends Signals.EventEmitter {
         if (!dev)
             return;
         this._outputs.set(id, dev);
+        this._querySinkTelemetry();
         this._syncAudioDeviceList();
 
         if (this._bootstrapped && !this._knownOutputIds.has(id)) {
@@ -749,7 +845,8 @@ export class QuickActionsManager extends Signals.EventEmitter {
         if (id === null || id === undefined)
             return;
 
-        const classification = classifyAudioDevice(dev);
+        const telemetry = this._getDevTelemetry(dev);
+        const classification = classifyAudioDevice(dev, telemetry);
         if (!classification)
             return;
 
@@ -864,13 +961,16 @@ export class QuickActionsManager extends Signals.EventEmitter {
                 (activeStreamId !== null && dev.get_stream_id?.() === activeStreamId);
             if (isActive)
                 this._activeOutputId = id;
-            const classification = classifyAudioDevice(dev);
+            const telemetry = this._getDevTelemetry(dev);
+            const classification = classifyAudioDevice(dev, telemetry);
             list.push({
                 id,
                 label,
                 iconName: dev.get_icon_name?.() || 'audio-speakers-symbolic',
                 active: isActive,
                 deviceType: classification ? classification.type : null,
+                sampleRate: telemetry?.rate || null,
+                telemetrySummary: telemetry?.summary || null,
             });
         }
         this._state.outputs = list;
