@@ -332,6 +332,7 @@ export default class BayIslandExtension extends Extension {
             expandedDefaultTab,
             mediaIslandClock: s.get_string('media-island-clock'),
             tabOrder,
+            notificationDismissOnLeave: s.get_boolean('notification-dismiss-on-leave'),
         });
         this._topBar.syncPanelGeometry();
 

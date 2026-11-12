@@ -151,6 +151,12 @@
       <description>Milliseconds to display incoming notification banners before dismissing.</description>
     </key>
 
+    <key name="notification-dismiss-on-leave" type="b">
+      <default>false</default>
+      <summary>Dismiss Notification on Cursor Leave</summary>
+      <description>Instantly dismiss incoming notification banners when the mouse pointer hovers over and leaves the dynamic island.</description>
+    </key>
+
     <key name="enable-power" type="b">
       <default>true</default>
       <summary>Enable Power and Charging Events</summary>

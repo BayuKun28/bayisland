@@ -127,6 +127,8 @@ export class PriorityManager extends Signals.EventEmitter {
         this._transientTimerId = 0;
         this._transientRemainingMs = 0;
         this._transientStartedUs = 0;
+        this._transientSawHover = false;
+        this._transientLeaveTimerId = 0;
 
         this._expanded = {
             active: false,
@@ -149,6 +151,7 @@ export class PriorityManager extends Signals.EventEmitter {
             expandedDefaultTab: 'auto',
             mediaIslandClock: 'none',
             tabOrder: [...DEFAULT_TAB_ORDER],
+            notificationDismissOnLeave: false,
         };
         this._environment = {
             panelVisible: false,
@@ -190,6 +193,8 @@ export class PriorityManager extends Signals.EventEmitter {
                 ? next.mediaIslandClock
                 : 'none';
         }
+        if (next.notificationDismissOnLeave !== undefined)
+            next.notificationDismissOnLeave = Boolean(next.notificationDismissOnLeave);
         Object.assign(this._options, next);
         if (!this._options.idleHandleEnabled)
             this._hoverPeek = false;
@@ -265,6 +270,7 @@ export class PriorityManager extends Signals.EventEmitter {
         };
 
         this._clearTransientTimer();
+        this._transientSawHover = Boolean(this._hovered);
         if (!sticky && durationMs > 0) {
             this._transientRemainingMs = durationMs;
             if (!this._hovered)
@@ -288,6 +294,7 @@ export class PriorityManager extends Signals.EventEmitter {
 
         const onDismiss = this._transient.onDismiss;
         this._clearTransientTimer();
+        this._transientSawHover = false;
         this._transient = null;
         this._transientRemainingMs = 0;
         this._reconcile(false);
@@ -317,13 +324,31 @@ export class PriorityManager extends Signals.EventEmitter {
             return;
 
         if (nextHovered) {
+            this._transientSawHover = true;
+            if (this._transientLeaveTimerId) {
+                this._timers.clear(this._transientLeaveTimerId);
+                this._transientLeaveTimerId = 0;
+            }
             if (this._transientTimerId) {
                 const elapsedMs = Math.floor((GLib.get_monotonic_time() - this._transientStartedUs) / 1000);
                 this._transientRemainingMs = Math.max(1200, this._transientRemainingMs - elapsedMs);
                 this._clearTransientTimer();
             }
-        } else if (this._transientRemainingMs > 0) {
-            this._armTransientTimer(Math.max(1000, this._transientRemainingMs));
+        } else {
+            if (this._options.notificationDismissOnLeave &&
+                this._transient.kind === 'notification' &&
+                this._transientSawHover) {
+                const activeId = this._transient.id;
+                this._transientLeaveTimerId = this._timers.setTimeout(150, () => {
+                    this._transientLeaveTimerId = 0;
+                    if (!this._hovered && this._transient?.id === activeId)
+                        this.dismissTransient(activeId);
+                });
+                return;
+            }
+            if (this._transientRemainingMs > 0) {
+                this._armTransientTimer(Math.max(1000, this._transientRemainingMs));
+            }
         }
     }
 
@@ -436,6 +461,10 @@ export class PriorityManager extends Signals.EventEmitter {
         if (this._transientTimerId) {
             this._timers.clear(this._transientTimerId);
             this._transientTimerId = 0;
+        }
+        if (this._transientLeaveTimerId) {
+            this._timers.clear(this._transientLeaveTimerId);
+            this._transientLeaveTimerId = 0;
         }
     }
 

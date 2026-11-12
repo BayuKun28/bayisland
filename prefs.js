@@ -840,6 +840,12 @@ export default class BayIslandPreferences extends ExtensionPreferences {
         ));
         prodGroup.add(this._bindSwitch(
             settings,
+            'notification-dismiss-on-leave',
+            'Dismiss on Cursor Leave',
+            'Instantly dismiss notification banners once the mouse pointer hovers and leaves the dynamic island.'
+        ));
+        prodGroup.add(this._bindSwitch(
+            settings,
             'enable-timer',
             'Built-in Timer and Pomodoro',
             'Countdown and 25m Pomodoro inside the pill and Home tab.'
