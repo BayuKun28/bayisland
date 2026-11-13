@@ -181,6 +181,12 @@
       <description>Warn when sustained CPU or RAM usage exceeds threshold.</description>
     </key>
 
+    <key name="enable-network-hud" type="b">
+      <default>true</default>
+      <summary>Enable Network Speed Telemetry HUD</summary>
+      <description>Show real-time download and upload transfer rates in the island when active transfer is detected.</description>
+    </key>
+
     <key name="resource-cpu-threshold" type="i">
       <default>90</default>
       <range min="50" max="99"/>

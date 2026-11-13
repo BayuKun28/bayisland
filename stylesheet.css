@@ -1368,3 +1368,205 @@
   font-weight: 700;
   font-feature-settings: "tnum";
 }
+
+/* Feed Segment Switcher & Island Scratchpad */
+.bayisland-feed-seg-btn {
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.bayisland-feed-seg-btn:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+}
+
+.bayisland-feed-seg-active {
+  font-weight: 800;
+}
+
+.bayisland-scratch-entry {
+  padding: 4px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background-color: rgba(255, 255, 255, 0.04);
+  color: #f1f5f9;
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+.bayisland-scratch-entry:focus {
+  border-color: rgba(147, 197, 253, 0.45);
+  background-color: rgba(255, 255, 255, 0.07);
+}
+
+.bayisland-task-row {
+  padding: 5px 8px;
+  border-radius: 10px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.038);
+  margin-bottom: 3px;
+  spacing: 8px;
+}
+
+.bayisland-task-row:hover {
+  background-color: rgba(255, 255, 255, 0.075);
+}
+
+.bayisland-task-check {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: none;
+  background-color: rgba(255, 255, 255, 0.10);
+}
+
+.bayisland-task-check:hover {
+  background-color: rgba(255, 255, 255, 0.18);
+}
+
+.bayisland-task-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #e2e8f0;
+}
+
+.bayisland-task-done {
+  text-decoration: line-through;
+  opacity: 0.52;
+  color: #94a3b8;
+}
+
+.bayisland-task-del-btn {
+  padding: 2px 4px;
+  border-radius: 999px;
+  border: none;
+  opacity: 0.45;
+}
+
+.bayisland-task-del-btn:hover {
+  opacity: 1.0;
+  background-color: rgba(239, 68, 68, 0.22);
+}
+
+/* Network Speed HUD & Micro Badges */
+.bayisland-peek-task-badge {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background-color: rgba(56, 189, 248, 0.20);
+  color: #38bdf8;
+  font-size: 9.5px;
+  font-weight: 700;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-net-speed-label {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background-color: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  font-size: 9px;
+  font-weight: 700;
+  font-feature-settings: "tnum";
+  margin-left: 4px;
+}
+
+/* Island Quick Command Runner & Instant Calculator */
+.bayisland-runner-bar {
+  margin: 0px 14px 6px 14px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background-color: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  spacing: 6px;
+}
+
+.bayisland-runner-entry {
+  padding: 2px 6px;
+  background-color: transparent;
+  border: none;
+  color: #f8fafc;
+  font-size: 11px;
+  font-family: monospace;
+}
+
+.bayisland-runner-result {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: none;
+  font-feature-settings: "tnum";
+  font-weight: 700;
+}
+
+.bayisland-runner-result:hover {
+  opacity: 0.90;
+}
+
+.bayisland-runner-run-btn {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  background-color: rgba(59, 130, 246, 0.35);
+  color: #93c5fd;
+  border: none;
+}
+
+.bayisland-runner-run-btn:hover {
+  background-color: rgba(59, 130, 246, 0.55);
+}
+
+.bayisland-runner-clear-btn {
+  padding: 2px;
+  border-radius: 999px;
+  opacity: 0.6;
+}
+
+.bayisland-runner-clear-btn:hover {
+  opacity: 1.0;
+}
+
+.bayisland-runner-output-box {
+  margin: 0px 14px 6px 14px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background-color: rgba(15, 23, 42, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  spacing: 4px;
+}
+
+.bayisland-runner-out-header {
+  spacing: 6px;
+  margin-bottom: 3px;
+}
+
+.bayisland-runner-out-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #94a3b8;
+  font-family: monospace;
+}
+
+.bayisland-runner-out-time {
+  font-size: 9px;
+  font-weight: 600;
+  color: #64748b;
+  font-feature-settings: "tnum";
+}
+
+.bayisland-runner-out-scroll {
+  padding: 4px 6px;
+  background-color: rgba(0, 0, 0, 0.32);
+  border-radius: 6px;
+}
+
+.bayisland-runner-out-text {
+  font-size: 10.5px;
+  font-family: monospace;
+  line-height: 1.34;
+}

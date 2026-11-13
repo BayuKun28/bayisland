@@ -15,15 +15,38 @@ export class ResourceManager {
         this._priority = priority;
 
         this._enabled = false;
+        this._netHudEnabled = true;
         this._cpuThreshold = 90;
         this._ramThreshold = 90;
 
         this._pollId = 0;
+        this._netPollId = 0;
         this._cancellable = new Gio.Cancellable();
+        this._netCancellable = new Gio.Cancellable();
         this._prevCpu = null;
+        this._prevNetSample = null;
+        this._netWasActive = false;
         this._cpuStreak = 0;
         this._ramStreak = 0;
         this._lastAlertMonoSec = 0;
+    }
+
+    setNetworkHudEnabled(enabled) {
+        const want = Boolean(enabled);
+        if (want === this._netHudEnabled)
+            return;
+        this._netHudEnabled = want;
+        if (want) {
+            this._startNet();
+        } else {
+            this._stopNet();
+            if (this._netWasActive) {
+                this._netWasActive = false;
+                this._priority.updateMeta({
+                    netSpeed: { active: false, summary: '', rxStr: '', txStr: '', rxRate: 0, txRate: 0 },
+                }, { inPlaceHint: true });
+            }
+        }
     }
 
     setEnabled(enabled) {
@@ -56,6 +79,9 @@ export class ResourceManager {
             this._sampleAsync();
             return true;
         });
+
+        if (this._netHudEnabled)
+            this._startNet();
     }
 
     _sampleAsync() {
@@ -175,8 +201,129 @@ export class ResourceManager {
         });
     }
 
+    _startNet() {
+        this._stopNet();
+        this._netCancellable = new Gio.Cancellable();
+        this._prevNetSample = null;
+        this._sampleNetAsync();
+        this._netPollId = this._timers.setIntervalSeconds(2, () => {
+            if (!this._netHudEnabled)
+                return false;
+            this._sampleNetAsync();
+            return true;
+        });
+    }
+
+    _stopNet() {
+        this._netCancellable?.cancel();
+        if (this._netPollId) {
+            this._timers.clear(this._netPollId);
+            this._netPollId = 0;
+        }
+        this._prevNetSample = null;
+    }
+
+    _sampleNetAsync() {
+        const netFile = Gio.File.new_for_path('/proc/net/dev');
+        netFile.load_contents_async(this._netCancellable, (f, res) => {
+            try {
+                const [ok, bytes] = f.load_contents_finish(res);
+                if (!ok || !this._netHudEnabled)
+                    return;
+                const text = new TextDecoder().decode(bytes);
+                this._parseNetDev(text);
+            } catch {
+                // Cancelled or missing
+            }
+        });
+    }
+
+    _parseNetDev(text) {
+        let totalRx = 0;
+        let totalTx = 0;
+        const lines = text.split('\n');
+
+        for (const line of lines) {
+            const colonIdx = line.indexOf(':');
+            if (colonIdx === -1)
+                continue;
+
+            const iface = line.slice(0, colonIdx).trim();
+            if (iface === 'lo' ||
+                iface.startsWith('docker') ||
+                iface.startsWith('br-') ||
+                iface.startsWith('veth') ||
+                iface.startsWith('virbr'))
+                continue;
+
+            const data = line.slice(colonIdx + 1).trim().split(/\s+/);
+            if (data.length < 9)
+                continue;
+
+            const rx = Number(data[0]) || 0;
+            const tx = Number(data[8]) || 0;
+            totalRx += rx;
+            totalTx += tx;
+        }
+
+        const nowMono = GLib.get_monotonic_time();
+        if (!this._prevNetSample) {
+            this._prevNetSample = { timeMono: nowMono, rx: totalRx, tx: totalTx };
+            return;
+        }
+
+        const dtSec = Math.max(0.5, (nowMono - this._prevNetSample.timeMono) / 1_000_000);
+        const rxRate = Math.max(0, (totalRx - this._prevNetSample.rx) / dtSec);
+        const txRate = Math.max(0, (totalTx - this._prevNetSample.tx) / dtSec);
+        this._prevNetSample = { timeMono: nowMono, rx: totalRx, tx: totalTx };
+
+        const thresholdEnter = rxRate >= 60 * 1024 || txRate >= 40 * 1024;
+        const thresholdExit = rxRate < 25 * 1024 && txRate < 25 * 1024;
+        const isActive = this._netWasActive ? !thresholdExit : thresholdEnter;
+
+        if (isActive) {
+            this._netWasActive = true;
+            const rxStr = this._formatRate(rxRate);
+            const txStr = this._formatRate(txRate);
+            const summary = `↓ ${rxStr}  ↑ ${txStr}`;
+            this._priority.updateMeta({
+                netSpeed: {
+                    active: true,
+                    summary,
+                    rxStr,
+                    txStr,
+                    rxRate: Math.round(rxRate),
+                    txRate: Math.round(txRate),
+                },
+            }, { inPlaceHint: true });
+        } else if (this._netWasActive) {
+            this._netWasActive = false;
+            this._priority.updateMeta({
+                netSpeed: {
+                    active: false,
+                    summary: '',
+                    rxStr: '',
+                    txStr: '',
+                    rxRate: 0,
+                    txRate: 0,
+                },
+            }, { inPlaceHint: true });
+        }
+    }
+
+    _formatRate(bytesPerSec) {
+        if (!bytesPerSec || bytesPerSec < 1024)
+            return `${Math.round(bytesPerSec || 0)} B/s`;
+        if (bytesPerSec < 1024 * 1024)
+            return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+        if (bytesPerSec < 1024 * 1024 * 1024)
+            return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+        return `${(bytesPerSec / (1024 * 1024 * 1024)).toFixed(2)} GB/s`;
+    }
+
     _stop() {
         this._cancellable.cancel();
+        this._stopNet();
         if (this._pollId) {
             this._timers.clear(this._pollId);
             this._pollId = 0;

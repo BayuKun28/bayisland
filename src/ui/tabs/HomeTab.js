@@ -119,6 +119,7 @@ export class HomeTab {
         this._quickBtns = {};
 
         this._feedBox = null;
+        this._feedScroll = null;
         this._notifCountPill = null;
         this._clearAllBtn = null;
         this._lastHistory = null;
@@ -128,6 +129,21 @@ export class HomeTab {
         this._qaCard = null;
         this._timerCard = null;
         this._feedCard = null;
+
+        // Scratchpad / Interactive To-Do
+        this._activeFeedTab = 'notifications';
+        this._scratchTasks = this._loadScratchpadTasks();
+        this._scratchBox = null;
+        this._scratchScroll = null;
+        this._scratchEntry = null;
+        this._scratchCountPill = null;
+        this._clearTasksBtn = null;
+        this._notifTabBtn = null;
+        this._taskTabBtn = null;
+
+        const pendingInitial = this._scratchTasks.filter(t => !t.done).length;
+        if (pendingInitial > 0)
+            this._cb.onTasksCountChanged?.(pendingInitial);
     }
 
     render(model, palette, quickSnapshot, notifHistory) {
@@ -403,12 +419,12 @@ export class HomeTab {
         if (!dir)
             return false;
         const cards = [this._heroRow, this._qaCard, this._timerCard, this._feedCard].filter(Boolean);
-        const startX = dir * 42;
+        const startX = dir * 36;
         cards.forEach((card, idx) => {
             card.remove_all_transitions();
             card.translation_x = startX;
-            card.opacity = 0;
-            const delay = idx * 22;
+            card.opacity = 80;
+            const delay = idx * 20;
             if (delay > 0) {
                 this._timers.setTimeout(delay, () => {
                     if (card && card.get_stage?.()) {
@@ -704,6 +720,162 @@ export class HomeTab {
         return card;
     }
 
+    _loadScratchpadTasks() {
+        try {
+            const dirPath = GLib.build_filenamev([GLib.get_user_cache_dir(), 'bayisland']);
+            const path = GLib.build_filenamev([dirPath, 'scratchpad.json']);
+            const file = Gio.File.new_for_path(path);
+            if (!file.query_exists(null))
+                return [];
+            const [, bytes] = file.load_contents(null);
+            const str = new TextDecoder().decode(bytes);
+            const data = JSON.parse(str);
+            return Array.isArray(data) ? data : [];
+        } catch {
+            return [];
+        }
+    }
+
+    _saveScratchpadTasks() {
+        try {
+            const dirPath = GLib.build_filenamev([GLib.get_user_cache_dir(), 'bayisland']);
+            GLib.mkdir_with_parents(dirPath, 0o755);
+            const path = GLib.build_filenamev([dirPath, 'scratchpad.json']);
+            const file = Gio.File.new_for_path(path);
+            const json = JSON.stringify(this._scratchTasks, null, 2);
+            file.replace_contents(json, null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null);
+        } catch {}
+        this._updatePendingTaskCount();
+    }
+
+    _updatePendingTaskCount() {
+        const pendingCount = this._scratchTasks.filter(t => !t.done).length;
+        if (this._scratchCountPill) {
+            this._scratchCountPill.text = String(pendingCount);
+            this._scratchCountPill.visible = this._activeFeedTab === 'tasks' && pendingCount > 0;
+        }
+        this._cb.onTasksCountChanged?.(pendingCount);
+    }
+
+    _setFeedTab(tab, acc, fg) {
+        this._activeFeedTab = tab;
+        const isNotif = tab === 'notifications';
+
+        if (this._notifTabBtn) {
+            this._notifTabBtn.style_class = `bayisland-feed-seg-btn${isNotif ? ' bayisland-feed-seg-active' : ''}`;
+            this._notifTabBtn.style = isNotif ? `background-color: ${acc}; color: ${fg};` : null;
+        }
+        if (this._taskTabBtn) {
+            this._taskTabBtn.style_class = `bayisland-feed-seg-btn${!isNotif ? ' bayisland-feed-seg-active' : ''}`;
+            this._taskTabBtn.style = !isNotif ? `background-color: ${acc}; color: ${fg};` : null;
+        }
+
+        if (this._notifCountPill)
+            this._notifCountPill.visible = isNotif && (parseInt(this._notifCountPill.text || '0', 10) > 0);
+        if (this._clearAllBtn)
+            this._clearAllBtn.visible = isNotif && Boolean(this._feedBox?.get_children()?.length);
+
+        if (this._scratchCountPill) {
+            const pendingTasks = this._scratchTasks.filter(t => !t.done).length;
+            this._scratchCountPill.visible = !isNotif && pendingTasks > 0;
+        }
+        if (this._clearTasksBtn)
+            this._clearTasksBtn.visible = !isNotif && this._scratchTasks.some(t => t.done);
+
+        if (this._scratchEntry)
+            this._scratchEntry.visible = !isNotif;
+        if (this._feedScroll)
+            this._feedScroll.visible = isNotif;
+        if (this._scratchScroll)
+            this._scratchScroll.visible = !isNotif;
+    }
+
+    _populateScratchpad() {
+        if (!this._scratchBox)
+            return;
+        this._scratchBox.destroy_all_children();
+
+        const acc = this._lastPalette?.accentCss || '#93c5fd';
+        if (this._scratchTasks.length === 0) {
+            const empty = new St.BoxLayout({
+                vertical: true,
+                x_expand: true,
+                y_expand: true,
+                x_align: Clutter.ActorAlign.CENTER,
+                y_align: Clutter.ActorAlign.CENTER,
+                style: 'padding: 26px 0px; spacing: 6px;',
+            });
+            empty.add_child(new St.Icon({
+                icon_name: 'view-list-bullet-symbolic',
+                icon_size: 22,
+                style: 'color: #475569;',
+            }));
+            empty.add_child(new St.Label({
+                text: 'No tasks yet • Type above & press Enter',
+                style_class: 'bayisland-muted-sm',
+            }));
+            this._scratchBox.add_child(empty);
+            return;
+        }
+
+        for (const item of this._scratchTasks) {
+            const row = new St.BoxLayout({
+                style_class: 'bayisland-task-row',
+                x_expand: true,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+
+            const checkBtn = new St.Button({
+                style_class: 'bayisland-icon-btn',
+                reactive: true,
+                can_focus: false,
+                child: new St.Icon({
+                    icon_name: item.done ? 'emblem-ok-symbolic' : 'checkbox-symbolic',
+                    icon_size: 14,
+                    style: item.done ? `color: ${acc};` : 'color: #64748b;',
+                }),
+            });
+            checkBtn.connect('clicked', () => {
+                item.done = !item.done;
+                this._saveScratchpadTasks();
+                this._populateScratchpad();
+            });
+            row.add_child(checkBtn);
+
+            const textLbl = new St.Label({
+                text: item.text,
+                style: item.done
+                    ? 'text-decoration: line-through; opacity: 0.55; color: #94a3b8; font-size: 11px;'
+                    : 'color: #f8fafc; font-size: 11px; font-weight: 500;',
+                x_expand: true,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            textLbl.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+            row.add_child(textLbl);
+
+            const delBtn = new St.Button({
+                style_class: 'bayisland-icon-btn bayisland-icon-btn-del',
+                reactive: true,
+                can_focus: false,
+                child: new St.Icon({
+                    icon_name: 'window-close-symbolic',
+                    icon_size: 11,
+                }),
+            });
+            delBtn.connect('clicked', () => {
+                this._scratchTasks = this._scratchTasks.filter(t => t.id !== item.id);
+                this._saveScratchpadTasks();
+                this._populateScratchpad();
+            });
+            row.add_child(delBtn);
+
+            this._scratchBox.add_child(row);
+        }
+
+        if (this._clearTasksBtn)
+            this._clearTasksBtn.visible = this._activeFeedTab === 'tasks' && this._scratchTasks.some(t => t.done);
+    }
+
     _buildFeedCard(palette) {
         const acc = palette?.accentCss || '#93c5fd';
         const fg = palette?.accentFgCss || '#090d16';
@@ -721,11 +893,32 @@ export class HomeTab {
             style: 'spacing: 6px;',
             y_align: Clutter.ActorAlign.CENTER,
         });
-        header.add_child(new St.Label({
-            text: 'NOTIFICATIONS',
-            style_class: 'bayisland-section-title',
+
+        const segBox = new St.BoxLayout({
+            style: 'spacing: 4px;',
             y_align: Clutter.ActorAlign.CENTER,
-        }));
+        });
+
+        this._notifTabBtn = new St.Button({
+            label: 'NOTIFICATIONS',
+            style_class: `bayisland-feed-seg-btn${this._activeFeedTab === 'notifications' ? ' bayisland-feed-seg-active' : ''}`,
+            style: this._activeFeedTab === 'notifications' ? `background-color: ${acc}; color: ${fg};` : null,
+            reactive: true,
+            can_focus: false,
+        });
+        this._taskTabBtn = new St.Button({
+            label: 'TASKS',
+            style_class: `bayisland-feed-seg-btn${this._activeFeedTab === 'tasks' ? ' bayisland-feed-seg-active' : ''}`,
+            style: this._activeFeedTab === 'tasks' ? `background-color: ${acc}; color: ${fg};` : null,
+            reactive: true,
+            can_focus: false,
+        });
+
+        this._notifTabBtn.connect('clicked', () => this._setFeedTab('notifications', acc, fg));
+        this._taskTabBtn.connect('clicked', () => this._setFeedTab('tasks', acc, fg));
+        segBox.add_child(this._notifTabBtn);
+        segBox.add_child(this._taskTabBtn);
+        header.add_child(segBox);
 
         this._notifCountPill = new St.Label({
             text: '0',
@@ -735,6 +928,16 @@ export class HomeTab {
             visible: false,
         });
         header.add_child(this._notifCountPill);
+
+        const pendingTasks = this._scratchTasks.filter(t => !t.done).length;
+        this._scratchCountPill = new St.Label({
+            text: String(pendingTasks),
+            style_class: 'bayisland-count-pill',
+            style: `background-color: ${acc}; color: ${fg};`,
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: this._activeFeedTab === 'tasks' && pendingTasks > 0,
+        });
+        header.add_child(this._scratchCountPill);
 
         header.add_child(new St.Widget({ x_expand: true }));
 
@@ -754,6 +957,7 @@ export class HomeTab {
             const children = this._feedBox ? this._feedBox.get_children() : [];
             if (!children.length) {
                 this._isClearingFeed = false;
+                this._populateFeed();
                 this._cb.onNotifClearAll?.();
                 return;
             }
@@ -763,6 +967,7 @@ export class HomeTab {
                 pending--;
                 if (pending <= 0) {
                     this._isClearingFeed = false;
+                    this._populateFeed();
                     this._cb.onNotifClearAll?.();
                 }
             };
@@ -779,23 +984,88 @@ export class HomeTab {
             }
         });
         header.add_child(this._clearAllBtn);
+
+        this._clearTasksBtn = new St.Button({
+            label: 'Clear Done',
+            style_class: 'bayisland-mini-pill-btn',
+            reactive: true,
+            can_focus: false,
+            visible: this._activeFeedTab === 'tasks' && this._scratchTasks.some(t => t.done),
+        });
+        this._clearTasksBtn.connect('clicked', () => {
+            this._scratchTasks = this._scratchTasks.filter(t => !t.done);
+            this._saveScratchpadTasks();
+            this._populateScratchpad();
+        });
+        header.add_child(this._clearTasksBtn);
         card.add_child(header);
 
-        const scroll = new St.ScrollView({
+        // Task quick entry
+        this._scratchEntry = new St.Entry({
+            hint_text: '+ Add task (press Enter)…',
+            style_class: 'bayisland-scratch-entry',
+            can_focus: true,
+            reactive: true,
+            visible: this._activeFeedTab === 'tasks',
+        });
+        this._scratchEntry.clutter_text.connect('key-press-event', (_actor, event) => {
+            const sym = event.get_key_symbol();
+            if (sym === Clutter.KEY_Return || sym === Clutter.KEY_KP_Enter) {
+                const text = (this._scratchEntry.get_text() || '').trim();
+                if (text) {
+                    this._scratchTasks.unshift({ id: Date.now(), text, done: false });
+                    this._saveScratchpadTasks();
+                    this._scratchEntry.set_text('');
+                    this._populateScratchpad();
+                }
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
+        this._scratchEntry.connect('button-press-event', () => {
+            this._cb.onAcquireTextModal?.(this._scratchEntry);
+            return Clutter.EVENT_PROPAGATE;
+        });
+        this._scratchEntry.clutter_text.connect('key-focus-out', () => {
+            this._cb.onReleaseTextModal?.();
+        });
+        card.add_child(this._scratchEntry);
+
+        // Notifications Scroll
+        this._feedScroll = new St.ScrollView({
             style_class: 'bayisland-scroll-view vfade',
             overlay_scrollbars: true,
             x_expand: true,
             y_expand: true,
+            visible: this._activeFeedTab === 'notifications',
         });
         this._feedBox = new St.BoxLayout({
             vertical: true,
             x_expand: true,
             style: 'spacing: 5px;',
         });
-        scroll.child = this._feedBox;
-        card.add_child(scroll);
+        this._feedScroll.child = this._feedBox;
+        card.add_child(this._feedScroll);
+
+        // Scratchpad Tasks Scroll
+        this._scratchScroll = new St.ScrollView({
+            style_class: 'bayisland-scroll-view vfade',
+            overlay_scrollbars: true,
+            x_expand: true,
+            y_expand: true,
+            visible: this._activeFeedTab === 'tasks',
+        });
+        this._scratchBox = new St.BoxLayout({
+            vertical: true,
+            x_expand: true,
+            style: 'spacing: 5px;',
+        });
+        this._scratchScroll.child = this._scratchBox;
+        card.add_child(this._scratchScroll);
 
         this._populateFeed();
+        this._populateScratchpad();
+        this._updatePendingTaskCount();
         return card;
     }
 
@@ -847,11 +1117,11 @@ export class HomeTab {
                 text: 'All caught up',
                 style_class: 'bayisland-muted-sm',
             }));
-            empty.opacity = 0;
+            empty.opacity = 180;
             this._feedBox.add_child(empty);
             empty.ease({
                 opacity: 255,
-                duration: 140,
+                duration: 100,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
             });
             return;
@@ -1133,7 +1403,9 @@ export class HomeTab {
     }
 
     updateInPlace(model) {
-        const t = model.persistent.timer;
+        if (!this._root)
+            return false;
+        const t = model.persistent?.timer;
         if (this._timerValueLabel && t?.active) {
             this._timerValueLabel.text = formatClock(t.remainingSec ?? 0);
             if (this._timerSubLabel) {
@@ -1143,9 +1415,8 @@ export class HomeTab {
             }
             if (this._timerToggleBtn)
                 this._timerToggleBtn.label = t.running ? 'Pause' : 'Resume';
-            return true;
         }
-        return false;
+        return true;
     }
 
     destroy() {

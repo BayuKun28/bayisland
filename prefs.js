@@ -862,6 +862,12 @@ export default class BayIslandPreferences extends ExtensionPreferences {
             'Resource Spike Warning',
             'Alert on sustained high CPU or RAM usage (2 consecutive samples, 60s cooldown).'
         ));
+        prodGroup.add(this._bindSwitch(
+            settings,
+            'enable-network-hud',
+            'Network Speed Telemetry HUD',
+            'Display real-time download and upload transfer rates in the island when active transfer is detected.'
+        ));
         prodGroup.add(this._bindSpin(
             settings,
             'resource-cpu-threshold',

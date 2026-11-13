@@ -453,12 +453,12 @@ export class MediaTab {
         if (!dir)
             return false;
         const cards = [this._playerCard, this._audioCard].filter(Boolean);
-        const startX = dir * 42;
+        const startX = dir * 36;
         cards.forEach((card, idx) => {
             card.remove_all_transitions();
             card.translation_x = startX;
-            card.opacity = 0;
-            const delay = idx * 28;
+            card.opacity = 80;
+            const delay = idx * 24;
             if (delay > 0) {
                 GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
                     if (card && card.get_stage?.()) {
@@ -590,37 +590,38 @@ export class MediaTab {
     }
 
     updateInPlace(model) {
-        const m = model.persistent.media;
-        if (!this._root || !m?.active)
+        if (!this._root)
             return false;
+        const m = model.persistent?.media;
+        if (m?.active) {
+            if (this._titleLabel)
+                this._titleLabel.text = m.title || 'Unknown Title';
+            if (this._artistLabel)
+                this._artistLabel.text = m.artist || '';
+            if (this._playIcon) {
+                this._playIcon.icon_name = m.status === 'Playing'
+                    ? 'media-playback-pause-symbolic'
+                    : 'media-playback-start-symbolic';
+            }
+            if (this._eqBox)
+                this._eqBox.visible = m.status === 'Playing';
 
-        if (this._titleLabel)
-            this._titleLabel.text = m.title || 'Unknown Title';
-        if (this._artistLabel)
-            this._artistLabel.text = m.artist || '';
-        if (this._playIcon) {
-            this._playIcon.icon_name = m.status === 'Playing'
-                ? 'media-playback-pause-symbolic'
-                : 'media-playback-start-symbolic';
+            const len = m.lengthUs > 0 ? m.lengthUs : 0;
+            const pos = Math.max(0, Math.min(len || 0, m.positionUs || 0));
+            const ratio = len > 0 ? pos / len : 0;
+            const trackW = this._scrubTrack?.width > 40 ? this._scrubTrack.width : this._scrubWidth;
+            const fillW = Math.max(6, Math.round(trackW * ratio));
+            if (this._scrubFill)
+                this._scrubFill.width = fillW;
+            if (this._scrubKnob) {
+                this._scrubKnob.visible = len > 0;
+                this._scrubKnob.style = `background-color: #ffffff; margin-left: ${Math.max(0, Math.min(trackW - 10, fillW - 5))}px;`;
+            }
+            if (this._elapsedLabel)
+                this._elapsedLabel.text = formatMediaTime(pos);
+            if (this._remainingLabel)
+                this._remainingLabel.text = formatRemainingTime(pos, len);
         }
-        if (this._eqBox)
-            this._eqBox.visible = m.status === 'Playing';
-
-        const len = m.lengthUs > 0 ? m.lengthUs : 0;
-        const pos = Math.max(0, Math.min(len || 0, m.positionUs || 0));
-        const ratio = len > 0 ? pos / len : 0;
-        const trackW = this._scrubTrack?.width > 40 ? this._scrubTrack.width : this._scrubWidth;
-        const fillW = Math.max(6, Math.round(trackW * ratio));
-        if (this._scrubFill)
-            this._scrubFill.width = fillW;
-        if (this._scrubKnob) {
-            this._scrubKnob.visible = len > 0;
-            this._scrubKnob.style = `background-color: #ffffff; margin-left: ${Math.max(0, Math.min(trackW - 10, fillW - 5))}px;`;
-        }
-        if (this._elapsedLabel)
-            this._elapsedLabel.text = formatMediaTime(pos);
-        if (this._remainingLabel)
-            this._remainingLabel.text = formatRemainingTime(pos, len);
         return true;
     }
 

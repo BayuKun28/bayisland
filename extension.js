@@ -152,6 +152,7 @@ export default class BayIslandExtension extends Extension {
                 onNotifActivate: id => this._notifications?.activateNotification(id),
                 onNotifDismiss: id => this._notifications?.dismissItem(id),
                 onNotifAction: (id, idx) => this._notifications?.invokeAction(id, idx),
+                onTasksCountChanged: count => this._priority?.updateMeta({ pendingTasksCount: count }, { inPlaceHint: true }),
             },
         });
 
@@ -359,6 +360,7 @@ export default class BayIslandExtension extends Extension {
             s.get_int('resource-ram-threshold')
         );
         this._resource.setEnabled(s.get_boolean('enable-resource-spike'));
+        this._resource.setNetworkHudEnabled(s.get_boolean('enable-network-hud'));
 
         this._quickActions.setEnabled(s.get_boolean('enable-quick-actions'));
         this._quickActions.setAccessoryAlertsEnabled(s.get_boolean('enable-audio-accessory-alert'));

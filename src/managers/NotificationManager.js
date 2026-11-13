@@ -149,11 +149,16 @@ export class NotificationManager extends Signals.EventEmitter {
 
     clearAll() {
         this._taskItems = [];
-        for (const rec of [...this._liveItems.values()]) {
+        const items = [...this._liveItems.values()];
+        this._liveItems.clear();
+        for (const rec of items) {
+            if (rec.destroyId) {
+                try { rec.notif.disconnect(rec.destroyId); } catch {}
+            }
             try {
                 rec.notif.destroy(MessageTray.NotificationDestroyedReason.DISMISSED);
             } catch {
-                // Handled by destroy signal or cleanup
+                // Handled
             }
         }
         this._publishTrayMeta();

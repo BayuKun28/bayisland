@@ -106,6 +106,10 @@ export class CompactView {
         this._peekBatNumLabel = null;
         this._peekBadge = null;
         this._peekBadgeLabel = null;
+        this._peekTaskBadge = null;
+        this._peekTaskBadgeLabel = null;
+        this._netSpeedLabel = null;
+        this._mediaNetLabel = null;
         this._peekDndIcon = null;
         this._peekProfileIcon = null;
         this._integratedDot = null;
@@ -190,6 +194,17 @@ export class CompactView {
         if (this._peekBadgeLabel && unread > 0)
             this._peekBadgeLabel.text = String(unread);
 
+        if (this._peekTaskBadgeLabel) {
+            const pending = meta.pendingTasksCount ?? 0;
+            this._peekTaskBadgeLabel.text = String(pending);
+        }
+
+        if (this._netSpeedLabel && meta.netSpeed?.summary)
+            this._netSpeedLabel.text = meta.netSpeed.summary;
+
+        if (this._mediaNetLabel && meta.netSpeed?.summary)
+            this._mediaNetLabel.text = meta.netSpeed.summary;
+
         if (this._integratedDot)
             this._integratedDot.visible = unread > 0;
 
@@ -232,6 +247,10 @@ export class CompactView {
             if (wantFull) {
                 if ((unread > 0) !== Boolean(this._peekBadge))
                     return false;
+                if (((meta.pendingTasksCount ?? 0) > 0) !== Boolean(this._peekTaskBadge))
+                    return false;
+                if (Boolean(meta.netSpeed?.active) !== Boolean(this._netSpeedLabel))
+                    return false;
                 if (wantDndOnly !== Boolean(this._peekDndIcon))
                     return false;
             } else {
@@ -254,6 +273,10 @@ export class CompactView {
             const unread = meta.unreadNotifs ?? 0;
             const wantDndOnly = unread === 0 && Boolean(meta.dnd);
             if ((unread > 0) !== Boolean(this._peekBadge))
+                return false;
+            if (((meta.pendingTasksCount ?? 0) > 0) !== Boolean(this._peekTaskBadge))
+                return false;
+            if (Boolean(meta.netSpeed?.active) !== Boolean(this._netSpeedLabel))
                 return false;
             if (wantDndOnly !== Boolean(this._peekDndIcon))
                 return false;
@@ -425,6 +448,10 @@ export class CompactView {
         this._peekBatNumLabel = null;
         this._peekBadge = null;
         this._peekBadgeLabel = null;
+        this._peekTaskBadge = null;
+        this._peekTaskBadgeLabel = null;
+        this._netSpeedLabel = null;
+        this._mediaNetLabel = null;
         this._peekDndIcon = null;
         this._peekProfileIcon = null;
         this._integratedDot = null;
@@ -632,6 +659,34 @@ export class CompactView {
                 });
                 statusChip.add_child(this._peekDndIcon);
             }
+
+            const pendingTasks = meta.pendingTasksCount ?? 0;
+            if (pendingTasks > 0) {
+                this._peekTaskBadge = new St.BoxLayout({
+                    style_class: 'bayisland-peek-badge bayisland-peek-task-badge',
+                    y_align: Clutter.ActorAlign.CENTER,
+                });
+                this._peekTaskBadge.add_child(new St.Icon({
+                    icon_name: 'view-list-bullet-symbolic',
+                    icon_size: 10,
+                    style: 'color: #38bdf8;',
+                }));
+                this._peekTaskBadgeLabel = new St.Label({
+                    text: String(pendingTasks),
+                    style: 'color: #38bdf8; font-weight: 700;',
+                });
+                this._peekTaskBadge.add_child(this._peekTaskBadgeLabel);
+                statusChip.add_child(this._peekTaskBadge);
+            }
+
+            if (meta.netSpeed?.active) {
+                this._netSpeedLabel = new St.Label({
+                    text: meta.netSpeed.summary,
+                    style_class: 'bayisland-net-speed-label',
+                    y_align: Clutter.ActorAlign.CENTER,
+                });
+                statusChip.add_child(this._netSpeedLabel);
+            }
             rightGroup.add_child(statusChip);
 
             rightGroup.add_child(new St.Bin({
@@ -827,6 +882,34 @@ export class CompactView {
                 y_align: Clutter.ActorAlign.CENTER,
             });
             statusChip.add_child(this._peekDndIcon);
+        }
+
+        const pendingTasksHover = meta.pendingTasksCount ?? 0;
+        if (pendingTasksHover > 0) {
+            this._peekTaskBadge = new St.BoxLayout({
+                style_class: 'bayisland-peek-badge bayisland-peek-task-badge',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            this._peekTaskBadge.add_child(new St.Icon({
+                icon_name: 'view-list-bullet-symbolic',
+                icon_size: 10,
+                style: 'color: #38bdf8;',
+            }));
+            this._peekTaskBadgeLabel = new St.Label({
+                text: String(pendingTasksHover),
+                style: 'color: #38bdf8; font-weight: 700;',
+            });
+            this._peekTaskBadge.add_child(this._peekTaskBadgeLabel);
+            statusChip.add_child(this._peekTaskBadge);
+        }
+
+        if (meta.netSpeed?.active) {
+            this._netSpeedLabel = new St.Label({
+                text: meta.netSpeed.summary,
+                style_class: 'bayisland-net-speed-label',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            statusChip.add_child(this._netSpeedLabel);
         }
         rightGroup.add_child(statusChip);
 
@@ -1077,6 +1160,15 @@ export class CompactView {
                 y_align: Clutter.ActorAlign.CENTER,
             });
             box.add_child(this._mediaClockLabel);
+        }
+
+        if (model?.meta?.netSpeed?.active) {
+            this._mediaNetLabel = new St.Label({
+                text: model.meta.netSpeed.summary,
+                style_class: 'bayisland-net-speed-label',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            box.add_child(this._mediaNetLabel);
         }
 
         const minBtn = new St.Button({

@@ -1,9 +1,11 @@
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
+import Pango from 'gi://Pango';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import { normalizeTabOrder, TAB_DEFS } from '../core/PriorityManager.js';
+import { CommandRunnerManager } from '../managers/CommandRunnerManager.js';
 import { HomeTab } from './tabs/HomeTab.js';
 import { PowerTab } from './tabs/PowerTab.js';
 import { MediaTab } from './tabs/MediaTab.js';
@@ -17,7 +19,8 @@ function getStripClock() {
 /**
  * Interactive 5-Tab Minimalist Obsidian Bento Hub (EXPANDED_MODAL):
  * Layer 1: Streamlined 36px Header Bar (Stationary Nav Pills + Conditional Status Badges + System Controls)
- * Layer 2: Domain-Grouped Adaptive-Height Bento Canvas
+ * Layer 2: Quick Command Runner & Instant Calculator
+ * Layer 3: Domain-Grouped Adaptive-Height Bento Canvas
  */
 export class ExpandedView {
     constructor(callbacks, timers) {
@@ -36,6 +39,16 @@ export class ExpandedView {
         this._tabButtons = {};
         this._tabBadges = {};
 
+        // Quick Runner
+        this._runner = new CommandRunnerManager();
+        this._runnerEntry = null;
+        this._runnerResultChip = null;
+        this._runnerResultLabel = null;
+        this._runnerExecBtn = null;
+        this._runnerClearBtn = null;
+        this._runnerOutputDrawer = null;
+        this._lastMathResult = null;
+
         this._homeTab = new HomeTab({ callbacks, timers });
         this._powerTab = new PowerTab({ callbacks });
         this._mediaTab = new MediaTab({ callbacks });
@@ -52,24 +65,24 @@ export class ExpandedView {
         let targetH;
         switch (tab) {
         case 'media':
-            targetH = 310;
+            targetH = 344;
             break;
         case 'power':
-            targetH = 356;
+            targetH = 390;
             break;
         case 'clipboard':
-            targetH = 392;
+            targetH = 426;
             break;
         case 'shelf': {
             const count = model?.meta?.shelfCount ?? snapshots?.shelf?.items?.length ?? 0;
             targetH = count === 0
-                ? 310
-                : Math.min(436, 186 + Math.min(5, count) * 52);
+                ? 344
+                : Math.min(470, 220 + Math.min(5, count) * 52);
             break;
         }
         case 'home':
         default:
-            targetH = 362;
+            targetH = 396;
             break;
         }
 
@@ -257,7 +270,186 @@ export class ExpandedView {
         headerBar.add_child(utilityRow);
         root.add_child(headerBar);
 
-        // 2. Content Body Bin (non-reactive so Shelf bridge drops/drags pass through cleanly)
+        // 2. Quick Command Runner & Instant Calculator Bar
+        const runnerBar = new St.BoxLayout({
+            style_class: 'bayisland-runner-bar',
+            reactive: true,
+            x_expand: true,
+            height: 32,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
+        runnerBar.add_child(new St.Icon({
+            icon_name: 'utilities-terminal-symbolic',
+            icon_size: 13,
+            style: `color: ${acc}; margin-left: 8px; margin-right: 4px;`,
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+
+        this._runnerEntry = new St.Entry({
+            hint_text: 'Calc or > shell (e.g. 144 / 12, > ping -c 1 1.1.1.1)',
+            style_class: 'bayisland-runner-entry',
+            can_focus: true,
+            reactive: true,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
+        this._runnerEntry.clutter_text.connect('notify::has-focus', () => {
+            if (this._runnerEntry?.clutter_text?.has_focus)
+                this._cb.onAcquireTextModal?.(this._runnerEntry);
+            else
+                this._cb.onReleaseTextModal?.();
+        });
+
+        this._runnerResultChip = new St.Button({
+            style_class: 'bayisland-runner-result',
+            reactive: true,
+            can_focus: false,
+            visible: false,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._runnerResultLabel = new St.Label({
+            text: '',
+            style: `color: ${fg}; font-weight: 700; font-size: 11px;`,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._runnerResultChip.set_child(this._runnerResultLabel);
+        this._runnerResultChip.style = `background-color: ${acc}; color: ${fg};`;
+
+        const copyMathResult = () => {
+            const raw = this._lastMathResult;
+            if (raw !== null && raw !== undefined) {
+                St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, String(raw));
+                this._runnerResultLabel.text = 'Copied!';
+                this._timers.setTimeout(() => {
+                    if (this._runnerResultLabel && this._lastMathResult !== null)
+                        this._runnerResultLabel.text = `= ${this._lastMathResult}`;
+                }, 1000);
+            }
+        };
+        this._runnerResultChip.connect('clicked', copyMathResult);
+
+        this._runnerExecBtn = new St.Button({
+            label: 'Run ↵',
+            style_class: 'bayisland-mini-pill-btn bayisland-runner-run-btn',
+            reactive: true,
+            can_focus: false,
+            visible: false,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
+        const executeCurrentCommand = () => {
+            const text = (this._runnerEntry?.get_text() || '').trim();
+            if (!text)
+                return;
+
+            if (text.startsWith('>') || text.startsWith(':') || text.startsWith('!')) {
+                const cmd = text.replace(/^[>:!]\s*/, '');
+                if (!cmd)
+                    return;
+
+                this._runnerExecBtn.label = 'Running…';
+                this._runnerExecBtn.reactive = false;
+
+                this._runner.executeCommandAsync(cmd, res => {
+                    if (this._runnerExecBtn) {
+                        this._runnerExecBtn.label = 'Run ↵';
+                        this._runnerExecBtn.reactive = true;
+                    }
+                    this._showCommandOutput(cmd, res, acc, fg);
+                });
+            } else {
+                const math = this._runner.evaluateMath(text);
+                if (math.ok) {
+                    this._lastMathResult = math.result;
+                    copyMathResult();
+                }
+            }
+        };
+
+        this._runnerExecBtn.connect('clicked', executeCurrentCommand);
+
+        this._runnerClearBtn = new St.Button({
+            style_class: 'bayisland-icon-btn bayisland-runner-clear-btn',
+            child: new St.Icon({ icon_name: 'edit-clear-symbolic', icon_size: 11 }),
+            reactive: true,
+            can_focus: false,
+            visible: false,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._runnerClearBtn.connect('clicked', () => {
+            if (this._runnerEntry)
+                this._runnerEntry.set_text('');
+            this._runnerClearBtn.visible = false;
+            this._runnerResultChip.visible = false;
+            this._runnerExecBtn.visible = false;
+            this._lastMathResult = null;
+            if (this._runnerOutputDrawer)
+                this._runnerOutputDrawer.visible = false;
+        });
+
+        this._runnerEntry.clutter_text.connect('text-changed', () => {
+            const raw = this._runnerEntry?.get_text() || '';
+            const trimmed = raw.trim();
+            this._runnerClearBtn.visible = Boolean(trimmed);
+
+            if (!trimmed) {
+                this._runnerResultChip.visible = false;
+                this._runnerExecBtn.visible = false;
+                this._lastMathResult = null;
+                return;
+            }
+
+            if (trimmed.startsWith('>') || trimmed.startsWith(':') || trimmed.startsWith('!')) {
+                this._runnerResultChip.visible = false;
+                this._runnerExecBtn.visible = true;
+                this._lastMathResult = null;
+            } else {
+                this._runnerExecBtn.visible = false;
+                const math = this._runner.evaluateMath(trimmed);
+                if (math.ok) {
+                    this._lastMathResult = math.result;
+                    this._runnerResultLabel.text = `= ${math.result}`;
+                    this._runnerResultChip.visible = true;
+                } else {
+                    this._runnerResultChip.visible = false;
+                    this._lastMathResult = null;
+                }
+            }
+        });
+
+        this._runnerEntry.clutter_text.connect('key-press-event', (_actor, event) => {
+            const sym = event.get_key_symbol();
+            if (sym === Clutter.KEY_Return || sym === Clutter.KEY_KP_Enter) {
+                executeCurrentCommand();
+                return Clutter.EVENT_STOP;
+            }
+            if (sym === Clutter.KEY_Escape) {
+                this._runnerClearBtn.emit('clicked');
+                global.stage.set_key_focus(null);
+                this._cb.onReleaseTextModal?.();
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
+
+        runnerBar.add_child(this._runnerEntry);
+        runnerBar.add_child(this._runnerResultChip);
+        runnerBar.add_child(this._runnerExecBtn);
+        runnerBar.add_child(this._runnerClearBtn);
+        root.add_child(runnerBar);
+
+        // Command Output Drawer
+        this._runnerOutputDrawer = new St.BoxLayout({
+            style_class: 'bayisland-runner-output-box',
+            vertical: true,
+            x_expand: true,
+            visible: false,
+        });
+        root.add_child(this._runnerOutputDrawer);
+
+        // 3. Content Body Bin (non-reactive so Shelf bridge drops/drags pass through cleanly)
         this._bodyBin = new St.Bin({
             x_expand: true,
             y_expand: true,
@@ -278,6 +470,12 @@ export class ExpandedView {
                 this._stripClockLabel = null;
                 this._lowBatBtn = null;
                 this._incogBadge = null;
+                this._runnerEntry = null;
+                this._runnerResultChip = null;
+                this._runnerResultLabel = null;
+                this._runnerExecBtn = null;
+                this._runnerClearBtn = null;
+                this._runnerOutputDrawer = null;
                 this._tabButtons = {};
                 this._tabBadges = {};
                 this._currentTabId = null;
@@ -403,10 +601,10 @@ export class ExpandedView {
         const child = this._bodyBin.get_child();
         const handledStagger = this._activeTabInstance?.animateEntrance?.(dir);
         if (!handledStagger && child) {
-            const startX = dir * 48;
+            const startX = dir * 36;
             child.remove_all_transitions();
             child.translation_x = startX;
-            child.opacity = 0;
+            child.opacity = 100;
             child.ease({
                 translation_x: 0,
                 duration: 220,
@@ -437,7 +635,7 @@ export class ExpandedView {
         this._updateStripPowerAndBadges(model.meta, snaps);
 
         if (this._activeTabInstance?.updateInPlace)
-            return Boolean(this._activeTabInstance.updateInPlace(model));
+            this._activeTabInstance.updateInPlace(model);
 
         return true;
     }
@@ -525,8 +723,102 @@ export class ExpandedView {
         this._currentTabId = null;
     }
 
+    _showCommandOutput(cmd, res, acc, fg) {
+        if (!this._runnerOutputDrawer)
+            return;
+
+        this._runnerOutputDrawer.destroy_all_children();
+
+        const header = new St.BoxLayout({
+            style_class: 'bayisland-runner-out-header',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
+        const statusIcon = new St.Icon({
+            icon_name: res.ok ? 'emblem-ok-symbolic' : 'dialog-error-symbolic',
+            icon_size: 12,
+            style: res.ok ? 'color: #34d399;' : 'color: #ef4444;',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        header.add_child(statusIcon);
+
+        const titleLbl = new St.Label({
+            text: `$ ${cmd}`,
+            style_class: 'bayisland-runner-out-title',
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        titleLbl.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+        header.add_child(titleLbl);
+
+        const timeLbl = new St.Label({
+            text: `${res.durationMs}ms`,
+            style_class: 'bayisland-runner-out-time',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        header.add_child(timeLbl);
+
+        const copyBtn = new St.Button({
+            label: 'Copy',
+            style_class: 'bayisland-mini-pill-btn',
+            reactive: true,
+            can_focus: false,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        copyBtn.connect('clicked', () => {
+            const out = (res.stdout || res.stderr || '').trim();
+            if (out) {
+                St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, out);
+                copyBtn.label = 'Copied!';
+                this._timers.setTimeout(() => {
+                    if (copyBtn) copyBtn.label = 'Copy';
+                }, 1000);
+            }
+        });
+        header.add_child(copyBtn);
+
+        const closeBtn = new St.Button({
+            style_class: 'bayisland-icon-btn',
+            child: new St.Icon({ icon_name: 'window-close-symbolic', icon_size: 11 }),
+            reactive: true,
+            can_focus: false,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        closeBtn.connect('clicked', () => {
+            if (this._runnerOutputDrawer)
+                this._runnerOutputDrawer.visible = false;
+        });
+        header.add_child(closeBtn);
+
+        this._runnerOutputDrawer.add_child(header);
+
+        const outText = (res.stdout || res.stderr || '(no output)').trim();
+        const scroll = new St.ScrollView({
+            style_class: 'bayisland-runner-out-scroll',
+            x_expand: true,
+            y_expand: false,
+            height: Math.min(100, Math.max(36, outText.split('\n').length * 16 + 10)),
+            hscrollbar_policy: St.PolicyType.NEVER,
+            vscrollbar_policy: St.PolicyType.AUTOMATIC,
+        });
+
+        const outLabel = new St.Label({
+            text: outText,
+            style_class: 'bayisland-runner-out-text',
+            style: res.ok ? 'color: #e2e8f0;' : 'color: #fca5a5;',
+        });
+        outLabel.clutter_text.line_wrap = true;
+        scroll.set_child(outLabel);
+        this._runnerOutputDrawer.add_child(scroll);
+        this._runnerOutputDrawer.visible = true;
+    }
+
     destroy() {
         this.destroyCurrentTab();
+        if (this._runner) {
+            this._runner.destroy();
+            this._runner = null;
+        }
         try { this._homeTab?.disposePermanent?.(); } catch {}
         this._homeTab = null;
         this._powerTab = null;
@@ -538,6 +830,12 @@ export class ExpandedView {
         this._stripClockLabel = null;
         this._lowBatBtn = null;
         this._incogBadge = null;
+        this._runnerEntry = null;
+        this._runnerResultChip = null;
+        this._runnerResultLabel = null;
+        this._runnerExecBtn = null;
+        this._runnerClearBtn = null;
+        this._runnerOutputDrawer = null;
         this._bodyBin = null;
         this._root = null;
     }
