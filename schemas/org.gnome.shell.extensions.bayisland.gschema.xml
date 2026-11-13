@@ -113,6 +113,12 @@
       <description>Intercept GNOME OSD events (volume, brightness, mic mute, caffeine) into BayIsland.</description>
     </key>
 
+    <key name="enable-workspace-glance" type="b">
+      <default>true</default>
+      <summary>Enable Dynamic Workspace Glance</summary>
+      <description>Show a sleek transient banner on the Dynamic Island when switching virtual workspaces.</description>
+    </key>
+
     <key name="enable-mpris" type="b">
       <default>true</default>
       <summary>Enable Universal MPRIS Media Controller</summary>

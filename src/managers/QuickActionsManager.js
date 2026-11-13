@@ -422,6 +422,29 @@ export class QuickActionsManager extends Signals.EventEmitter {
         this._defaultSink.change_is_muted(!this._defaultSink.is_muted);
     }
 
+    setBrightnessFraction(fraction) {
+        const clamped = Math.max(0, Math.min(1, fraction));
+        const percentage = Math.round(clamped * 100);
+        try {
+            Gio.DBus.session.call(
+                'org.gnome.SettingsDaemon.Power',
+                '/org/gnome/SettingsDaemon/Power',
+                'org.freedesktop.DBus.Properties',
+                'Set',
+                new GLib.Variant('(ssv)', [
+                    'org.gnome.SettingsDaemon.Power.Screen',
+                    'Brightness',
+                    new GLib.Variant('i', percentage),
+                ]),
+                null,
+                Gio.DBusCallFlags.NONE,
+                1000,
+                null,
+                () => {}
+            );
+        } catch {}
+    }
+
     toggleMicMute() {
         if (!this._defaultSource)
             return;

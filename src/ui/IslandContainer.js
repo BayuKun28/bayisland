@@ -252,6 +252,13 @@ export class IslandContainer {
         this._transientView = new TransientView({
             onDismiss: id => this._priority.dismissTransient(id),
             onActivate: () => this._cb.onTransientActivate?.(),
+            onOsdSeek: (t, fraction) => {
+                if (t?.coalesceKey === 'osd-volume' || t?.title?.toLowerCase().includes('volume'))
+                    this._cb.onSetOutputVolume?.(fraction);
+                else if (t?.coalesceKey === 'osd-brightness' || t?.title?.toLowerCase().includes('brightness'))
+                    this._cb.onSetBrightnessFraction?.(fraction);
+            },
+            onOsdToggleMute: () => this._cb.onToggleOutputMute?.(),
         });
         this._expandedView = new ExpandedView({
             ...callbacks,
@@ -576,7 +583,9 @@ export class IslandContainer {
                 let src = global.stage?.get_event_actor?.(event) ?? event.get_source?.();
                 let isInteractive = false;
                 while (src && src !== this._shell) {
-                    if (src instanceof St.Button || src instanceof St.Entry) {
+                    if (src instanceof St.Button || src instanceof St.Entry ||
+                        src.has_style_class_name?.('bayisland-level-track') ||
+                        src.has_style_class_name?.('bayisland-level-fill')) {
                         isInteractive = true;
                         break;
                     }

@@ -42,6 +42,8 @@ export class OsdManager {
         this._priority = priority;
         this._injection = new InjectionManager();
         this._enabled = false;
+        this._workspaceGlanceEnabled = true;
+        this._workspaceSigId = 0;
     }
 
     setEnabled(enabled) {
@@ -54,6 +56,19 @@ export class OsdManager {
         else
             this._unhook();
         this._enabled = want;
+    }
+
+    setWorkspaceGlanceEnabled(enabled) {
+        const want = Boolean(enabled);
+        if (want === this._workspaceGlanceEnabled)
+            return;
+        this._workspaceGlanceEnabled = want;
+        if (this._enabled) {
+            if (want)
+                this._hookWorkspace();
+            else
+                this._unhookWorkspace();
+        }
     }
 
     _hook() {
@@ -96,6 +111,53 @@ export class OsdManager {
                     self._priority.dismissTransient(model.transient.id);
             };
         });
+
+        if (this._workspaceGlanceEnabled)
+            this._hookWorkspace();
+    }
+
+    _hookWorkspace() {
+        this._unhookWorkspace();
+        const wm = global.workspace_manager;
+        if (!wm)
+            return;
+        this._workspaceSigId = wm.connect('active-workspace-changed', () => {
+            this._handleWorkspaceChange();
+        });
+    }
+
+    _unhookWorkspace() {
+        if (this._workspaceSigId && global.workspace_manager) {
+            try { global.workspace_manager.disconnect(this._workspaceSigId); } catch {}
+        }
+        this._workspaceSigId = 0;
+    }
+
+    _handleWorkspaceChange() {
+        if (!this._enabled || !this._workspaceGlanceEnabled || !this._priority)
+            return;
+        const wm = global.workspace_manager;
+        if (!wm)
+            return;
+        const nWorkspaces = wm.get_n_workspaces?.() ?? 1;
+        if (nWorkspaces <= 1)
+            return;
+        const idx = wm.get_active_workspace_index?.() ?? 0;
+
+        const dots = [];
+        for (let i = 0; i < Math.min(8, nWorkspaces); i++)
+            dots.push(i === idx ? '●' : '○');
+
+        this._priority.pushTransient({
+            kind: 'osd',
+            weight: Weights.OSD,
+            coalesceKey: 'workspace-glance',
+            title: `Workspace ${idx + 1}`,
+            body: dots.join(' '),
+            icon: new Gio.ThemedIcon({ name: 'view-paged-symbolic' }),
+            iconColor: '#38bdf8',
+            durationMs: 1200,
+        });
     }
 
     _handleOsd(icon, label, level, maxLevel) {
@@ -126,6 +188,7 @@ export class OsdManager {
 
     _unhook() {
         this._injection.clear();
+        this._unhookWorkspace();
     }
 
     destroy() {

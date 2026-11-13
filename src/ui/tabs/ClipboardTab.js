@@ -70,6 +70,26 @@ export class ClipboardTab {
             this._query = this._searchEntry?.get_text() || '';
             this._populateList();
         });
+        this._searchEntry.clutter_text.connect('key-press-event', (_actor, event) => {
+            const sym = event.get_key_symbol();
+            if (sym === Clutter.KEY_Return || sym === Clutter.KEY_KP_Enter) {
+                const first = this._firstFilteredItem;
+                if (first) {
+                    this._cb.onReleaseTextModal?.();
+                    this._cb.onClipActivate?.(first.id, null);
+                    return Clutter.EVENT_STOP;
+                }
+            } else if (sym === Clutter.KEY_Escape) {
+                if (this._query) {
+                    this._query = '';
+                    this._searchEntry.set_text('');
+                    this._populateList();
+                    return Clutter.EVENT_STOP;
+                }
+                this._cb.onReleaseTextModal?.();
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
         this._searchEntry.connect('button-press-event', () => {
             this._cb.onAcquireTextModal?.(this._searchEntry);
             return Clutter.EVENT_PROPAGATE;
@@ -217,6 +237,8 @@ export class ClipboardTab {
             return true;
         });
 
+        this._firstFilteredItem = items[0] || null;
+
         if (items.length === 0) {
             this._listBox.add_child(this._emptyState(
                 q ? 'No matching entries' : 'No clipboard history yet'
@@ -271,10 +293,30 @@ export class ClipboardTab {
             x_expand: true,
         });
 
+        const txtTrim = (item.text || '').trim();
+        let smartBadgeText = null;
+        let smartBadgeColor = '#64748b';
+        if (item.colorHex) {
+            smartBadgeText = item.colorHex;
+            smartBadgeColor = '#a78bfa';
+        } else if (item.fileUris?.length > 0) {
+            smartBadgeText = `${item.fileUris.length} FILE`;
+            smartBadgeColor = '#38bdf8';
+        } else if (/^https?:\/\//i.test(txtTrim)) {
+            smartBadgeText = 'URL';
+            smartBadgeColor = '#60a5fa';
+        } else if ((txtTrim.startsWith('{') && txtTrim.endsWith('}')) || (txtTrim.startsWith('[') && txtTrim.endsWith(']'))) {
+            try {
+                JSON.parse(txtTrim);
+                smartBadgeText = 'JSON';
+                smartBadgeColor = '#f59e0b';
+            } catch {}
+        }
+
         if (item.colorHex) {
             inner.add_child(new St.Widget({
                 style_class: 'bayisland-color-swatch',
-                style: `background-color: ${item.colorHex};`,
+                style: `background-color: ${item.colorHex}; border: 1px solid rgba(255, 255, 255, 0.22);`,
                 y_align: Clutter.ActorAlign.CENTER,
             }));
         } else if (item.fileUris?.length > 0) {
@@ -282,6 +324,21 @@ export class ClipboardTab {
                 icon_name: 'folder-symbolic',
                 icon_size: 14,
                 style: `color: ${acc};`,
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+        } else if (smartBadgeText === 'URL') {
+            inner.add_child(new St.Icon({
+                icon_name: 'web-browser-symbolic',
+                icon_size: 13,
+                style: 'color: #60a5fa;',
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+        }
+
+        if (smartBadgeText && !item.colorHex && smartBadgeText !== 'URL') {
+            inner.add_child(new St.Label({
+                text: smartBadgeText,
+                style: `font-size: 8px; font-weight: 800; padding: 1px 4px; border-radius: 3px; background-color: rgba(255, 255, 255, 0.08); color: ${smartBadgeColor};`,
                 y_align: Clutter.ActorAlign.CENTER,
             }));
         }
@@ -339,6 +396,7 @@ export class ClipboardTab {
             child: new St.Icon({
                 icon_name: item.pinned ? 'starred-symbolic' : 'non-starred-symbolic',
                 icon_size: 13,
+                style: item.pinned ? `color: ${acc};` : null,
             }),
         });
         pinBtn.connect('clicked', () => this._cb.onClipTogglePin?.(item.id));

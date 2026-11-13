@@ -122,6 +122,7 @@ export default class BayIslandExtension extends Extension {
                 onToggleMicMute: () => this._quickActions?.toggleMicMute(),
                 onToggleOutputMute: () => this._quickActions?.toggleOutputMute(),
                 onSetOutputVolume: frac => this._quickActions?.setOutputVolume(frac),
+                onSetBrightnessFraction: frac => this._quickActions?.setBrightnessFraction(frac),
                 onStepVolume: (delta, opts) => this._quickActions?.stepVolume(delta, opts),
                 onSelectOutputDevice: devId => this._quickActions?.selectOutputDevice(devId),
                 onClipTogglePause: () => this._clipboard?.togglePaused(),
@@ -339,6 +340,7 @@ export default class BayIslandExtension extends Extension {
         this._syncThemeBridge();
 
         this._osd.setEnabled(s.get_boolean('enable-osd'));
+        this._osd.setWorkspaceGlanceEnabled(s.get_boolean('enable-workspace-glance'));
 
         this._mpris.setHideDelaySeconds(s.get_int('mpris-hide-delay'));
         this._mpris.setEnabled(s.get_boolean('enable-mpris'));

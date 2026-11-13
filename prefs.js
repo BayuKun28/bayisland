@@ -782,6 +782,12 @@ export default class BayIslandPreferences extends ExtensionPreferences {
         ));
         hwGroup.add(this._bindSwitch(
             settings,
+            'enable-workspace-glance',
+            'Dynamic Workspace Glance',
+            'Show a sleek transient banner on the Dynamic Island when switching virtual workspaces.'
+        ));
+        hwGroup.add(this._bindSwitch(
+            settings,
             'enable-power',
             'Power and ThinkPad Battery Events',
             'AC plug/unplug cards, low battery alerts, and BAT0 charge threshold readout.'

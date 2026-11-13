@@ -37,9 +37,11 @@ function classifyActionRole(act, index, totalActions) {
  * Resource Spikes, and Alarms with responsive monitor-aware sizing & multi-line wrapping.
  */
 export class TransientView {
-    constructor({ onDismiss, onActivate }) {
+    constructor({ onDismiss, onActivate, onOsdSeek, onOsdToggleMute }) {
         this._onDismiss = onDismiss;
         this._onActivate = onActivate;
+        this._onOsdSeek = onOsdSeek;
+        this._onOsdToggleMute = onOsdToggleMute;
 
         this._root = null;
         this._centerCol = null;
@@ -409,6 +411,16 @@ export class TransientView {
             ...(t.iconColor && !this._isAvatar ? { style: `color: ${t.iconColor};` } : {}),
         });
         iconWrap.set_child(this._icon);
+
+        if (t.kind === 'osd' && (t.coalesceKey === 'osd-volume' || t.title?.toLowerCase().includes('volume'))) {
+            iconWrap.reactive = true;
+            iconWrap.track_hover = true;
+            iconWrap.connect('button-press-event', () => {
+                this._onOsdToggleMute?.();
+                return Clutter.EVENT_STOP;
+            });
+        }
+
         box.add_child(iconWrap);
 
         // Center column
@@ -524,6 +536,68 @@ export class TransientView {
                 x_align: Clutter.ActorAlign.START,
             });
             track.add_child(this._levelFill);
+
+            if (t.kind === 'osd') {
+                track.reactive = true;
+                track.track_hover = true;
+                let dragging = false;
+                const updateFromCoords = (ex) => {
+                    const [tx] = track.get_transformed_position();
+                    const [tw] = track.get_transformed_size();
+                    const effectiveTw = tw > 0 ? tw : this._trackWidth;
+                    const r = Math.max(0, Math.min(1, (ex - tx) / effectiveTw));
+                    this._levelFill.width = Math.max(4, Math.round(effectiveTw * r));
+                    if (this._valueLabel)
+                        this._valueLabel.text = `${Math.round(r * 100)}%`;
+                    this._onOsdSeek?.(t, r);
+                };
+
+                track.connect('button-press-event', (_actor, event) => {
+                    if (event.get_button() !== Clutter.BUTTON_PRIMARY)
+                        return Clutter.EVENT_PROPAGATE;
+                    dragging = true;
+                    const [ex] = event.get_coords();
+                    updateFromCoords(ex);
+                    return Clutter.EVENT_STOP;
+                });
+
+                track.connect('motion-event', (_actor, event) => {
+                    if (!dragging)
+                        return Clutter.EVENT_PROPAGATE;
+                    const [ex] = event.get_coords();
+                    updateFromCoords(ex);
+                    return Clutter.EVENT_STOP;
+                });
+
+                track.connect('button-release-event', () => {
+                    if (!dragging)
+                        return Clutter.EVENT_PROPAGATE;
+                    dragging = false;
+                    return Clutter.EVENT_STOP;
+                });
+
+                track.connect('scroll-event', (_actor, event) => {
+                    const dir = event.get_scroll_direction();
+                    let delta = 0;
+                    if (dir === Clutter.ScrollDirection.UP) delta = 0.05;
+                    else if (dir === Clutter.ScrollDirection.DOWN) delta = -0.05;
+                    else if (dir === Clutter.ScrollDirection.SMOOTH) {
+                        const [, dy] = event.get_scroll_delta();
+                        delta = -dy * 0.03;
+                    }
+                    if (delta !== 0) {
+                        const cur = Math.max(0, Math.min(1, (t.level ?? 0) / maxVal));
+                        const next = Math.max(0, Math.min(1, cur + delta));
+                        this._levelFill.width = Math.max(4, Math.round(this._trackWidth * next));
+                        if (this._valueLabel)
+                            this._valueLabel.text = `${Math.round(next * 100)}%`;
+                        this._onOsdSeek?.(t, next);
+                        return Clutter.EVENT_STOP;
+                    }
+                    return Clutter.EVENT_PROPAGATE;
+                });
+            }
+
             centerCol.add_child(track);
         }
 

@@ -14,7 +14,18 @@ function sanitizePreview(text) {
 
 function extractColorHex(text) {
     const t = text.trim();
-    return HEX_COLOR_RE.test(t) ? t.toUpperCase() : null;
+    if (/^#[0-9a-fA-F]{3}$/.test(t))
+        return `#${t[1]}${t[1]}${t[2]}${t[2]}${t[3]}${t[3]}`.toUpperCase();
+    if (/^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(t))
+        return t.toUpperCase();
+    const rgbMatch = t.match(/^rgba?\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/i);
+    if (rgbMatch) {
+        const r = Math.min(255, parseInt(rgbMatch[1], 10)).toString(16).padStart(2, '0');
+        const g = Math.min(255, parseInt(rgbMatch[2], 10)).toString(16).padStart(2, '0');
+        const b = Math.min(255, parseInt(rgbMatch[3], 10)).toString(16).padStart(2, '0');
+        return `#${r}${g}${b}`.toUpperCase();
+    }
+    return null;
 }
 
 function parseFileUrisFromText(raw) {

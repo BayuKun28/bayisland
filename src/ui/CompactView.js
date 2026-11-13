@@ -111,6 +111,8 @@ export class CompactView {
         this._integratedDot = null;
         this._dropIcon = null;
         this._dropTitleLabel = null;
+        this._progressTrack = null;
+        this._progressFill = null;
     }
 
     setIntegratedMetrics({ height = 28, maxWidth = 360, inSlot = false } = {}) {
@@ -276,13 +278,25 @@ export class CompactView {
         }
 
         if (model.primary === 'timer' && this._currentPrimary === 'timer' && this._timerLabel) {
-            this._timerLabel.text = formatClock(model.persistent.timer.remainingSec ?? 0);
+            const t = model.persistent.timer;
+            this._timerLabel.text = formatClock(t.remainingSec ?? 0);
+            if (this._progressFill && this._progressTrack && t.totalSec > 0) {
+                const ratio = Math.max(0, Math.min(1, (t.totalSec - (t.remainingSec ?? 0)) / t.totalSec));
+                const trackW = this._progressTrack.width || 180;
+                this._progressFill.width = Math.max(2, Math.round(trackW * ratio));
+            }
             return true;
         }
         if (model.primary === 'media' && this._currentPrimary === 'media' && this._titleLabel) {
-            this._titleLabel.text = model.persistent.media.title || 'Media';
+            const m = model.persistent.media;
+            this._titleLabel.text = m.title || 'Media';
             if (this._mediaClockLabel)
                 this._mediaClockLabel.text = model.meta?.clockText || getPeekClockString();
+            if (this._progressFill && this._progressTrack && m.lengthUs > 0) {
+                const ratio = Math.max(0, Math.min(1, (m.positionUs || 0) / m.lengthUs));
+                const trackW = this._progressTrack.width || 200;
+                this._progressFill.width = Math.max(2, Math.round(trackW * ratio));
+            }
             return true;
         }
         return false;
@@ -416,6 +430,8 @@ export class CompactView {
         this._integratedDot = null;
         this._dropIcon = null;
         this._dropTitleLabel = null;
+        this._progressTrack = null;
+        this._progressFill = null;
         this._dropSubLabel = null;
     }
 
@@ -977,7 +993,34 @@ export class CompactView {
         });
         box.add_child(stateLabel);
 
-        return this._attachRoot(box);
+        const wrap = new St.BoxLayout({
+            vertical: true,
+            x_expand: true,
+            y_expand: true,
+            style: 'padding: 0px;',
+        });
+        wrap.add_child(box);
+
+        const ratio = timer.totalSec > 0
+            ? Math.max(0, Math.min(1, (timer.totalSec - (timer.remainingSec ?? 0)) / timer.totalSec))
+            : 0;
+        const progressTrack = new St.Widget({
+            style_class: 'bayisland-progress-underline-track',
+            x_expand: true,
+            layout_manager: new Clutter.BinLayout(),
+            clip_to_allocation: true,
+        });
+        this._progressTrack = progressTrack;
+        this._progressFill = new St.Widget({
+            style_class: 'bayisland-progress-underline-fill',
+            style: 'background-color: #fbbf24;',
+            width: Math.max(2, Math.round(180 * ratio)),
+            x_align: Clutter.ActorAlign.START,
+        });
+        progressTrack.add_child(this._progressFill);
+        wrap.add_child(progressTrack);
+
+        return this._attachRoot(wrap);
     }
 
     _renderMedia(media, palette, model = null) {
@@ -1049,6 +1092,34 @@ export class CompactView {
         minBtn.connect('clicked', () => this._onToggleMinimizePersistent?.());
         box.add_child(minBtn);
 
-        return this._attachRoot(box);
+        const wrap = new St.BoxLayout({
+            vertical: true,
+            x_expand: true,
+            y_expand: true,
+            style: 'padding: 0px;',
+        });
+        wrap.add_child(box);
+
+        const acc = palette?.accentOnDarkCss ?? palette?.accentCss ?? '#93c5fd';
+        const ratio = media.lengthUs > 0
+            ? Math.max(0, Math.min(1, (media.positionUs || 0) / media.lengthUs))
+            : 0;
+        const progressTrack = new St.Widget({
+            style_class: 'bayisland-progress-underline-track',
+            x_expand: true,
+            layout_manager: new Clutter.BinLayout(),
+            clip_to_allocation: true,
+        });
+        this._progressTrack = progressTrack;
+        this._progressFill = new St.Widget({
+            style_class: 'bayisland-progress-underline-fill',
+            style: `background-color: ${acc};`,
+            width: Math.max(2, Math.round(200 * ratio)),
+            x_align: Clutter.ActorAlign.START,
+        });
+        progressTrack.add_child(this._progressFill);
+        wrap.add_child(progressTrack);
+
+        return this._attachRoot(wrap);
     }
 }

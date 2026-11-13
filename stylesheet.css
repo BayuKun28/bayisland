@@ -258,6 +258,20 @@
   font-feature-settings: "tnum";
 }
 
+.bayisland-progress-underline-track {
+  height: 2px;
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  margin: 0px 14px 2px 14px;
+}
+
+.bayisland-progress-underline-fill {
+  height: 2px;
+  border-radius: 999px;
+  background-color: #93c5fd;
+  box-shadow: 0 0 6px rgba(147, 197, 253, 0.4);
+}
+
 .bayisland-peek-expand-btn {
   width: 24px;
   height: 24px;
@@ -467,6 +481,10 @@
   height: 6px;
   border-radius: 999px;
   background-color: rgba(255, 255, 255, 0.12);
+}
+
+.bayisland-level-track:hover {
+  background-color: rgba(255, 255, 255, 0.20);
 }
 
 .bayisland-level-fill {
