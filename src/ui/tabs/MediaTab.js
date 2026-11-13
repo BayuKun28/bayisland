@@ -449,48 +449,6 @@ export class MediaTab {
         return root;
     }
 
-    animateEntrance(dir = 0) {
-        if (!dir)
-            return false;
-        const cards = [this._playerCard, this._audioCard].filter(Boolean);
-        const startX = dir * 36;
-        cards.forEach((card, idx) => {
-            card.remove_all_transitions();
-            card.translation_x = startX;
-            card.opacity = 80;
-            const delay = idx * 24;
-            if (delay > 0) {
-                GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
-                    if (card && card.get_stage?.()) {
-                        card.ease({
-                            translation_x: 0,
-                            duration: 220,
-                            mode: Clutter.AnimationMode.EASE_OUT_BACK,
-                        });
-                        card.ease({
-                            opacity: 255,
-                            duration: 160,
-                            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                        });
-                    }
-                    return GLib.SOURCE_REMOVE;
-                });
-            } else {
-                card.ease({
-                    translation_x: 0,
-                    duration: 220,
-                    mode: Clutter.AnimationMode.EASE_OUT_BACK,
-                });
-                card.ease({
-                    opacity: 255,
-                    duration: 160,
-                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                });
-            }
-        });
-        return true;
-    }
-
     _rebuildDevCol(qa, palette = this._lastPalette) {
         if (!this._devCol)
             return;

@@ -415,47 +415,6 @@ export class HomeTab {
         return root;
     }
 
-    animateEntrance(dir = 0) {
-        if (!dir)
-            return false;
-        const cards = [this._heroRow, this._qaCard, this._timerCard, this._feedCard].filter(Boolean);
-        const startX = dir * 36;
-        cards.forEach((card, idx) => {
-            card.remove_all_transitions();
-            card.translation_x = startX;
-            card.opacity = 80;
-            const delay = idx * 20;
-            if (delay > 0) {
-                this._timers.setTimeout(delay, () => {
-                    if (card && card.get_stage?.()) {
-                        card.ease({
-                            translation_x: 0,
-                            duration: 220,
-                            mode: Clutter.AnimationMode.EASE_OUT_BACK,
-                        });
-                        card.ease({
-                            opacity: 255,
-                            duration: 160,
-                            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                        });
-                    }
-                });
-            } else {
-                card.ease({
-                    translation_x: 0,
-                    duration: 220,
-                    mode: Clutter.AnimationMode.EASE_OUT_BACK,
-                });
-                card.ease({
-                    opacity: 255,
-                    duration: 160,
-                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                });
-            }
-        });
-        return true;
-    }
-
     _scheduleCalendarStyle() {
         if (this._calStyleTimerId)
             this._timers?.clear(this._calStyleTimerId);

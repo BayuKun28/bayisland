@@ -595,26 +595,30 @@ export class ExpandedView {
             this._activeTabInstance = null;
         }
 
-        // 3. Mount new tab with bouncing, smooth slide-in
+        // 3. Mount new tab with smooth, consistent unified slide-in
         const snaps = snapshots ?? {};
         this._mountActiveTab(normalized, model, pal, snaps);
-        const child = this._bodyBin.get_child();
-        const handledStagger = this._activeTabInstance?.animateEntrance?.(dir);
-        if (!handledStagger && child) {
-            const startX = dir * 36;
+        const child = this._bodyBin?.get_child();
+        if (child) {
             child.remove_all_transitions();
-            child.translation_x = startX;
-            child.opacity = 100;
-            child.ease({
-                translation_x: 0,
-                duration: 220,
-                mode: Clutter.AnimationMode.EASE_OUT_BACK,
-            });
-            child.ease({
-                opacity: 255,
-                duration: 160,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            });
+            if (dir !== 0) {
+                const startX = dir * 26;
+                child.translation_x = startX;
+                child.opacity = 140;
+                child.ease({
+                    translation_x: 0,
+                    duration: 200,
+                    mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+                });
+                child.ease({
+                    opacity: 255,
+                    duration: 160,
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                });
+            } else {
+                child.translation_x = 0;
+                child.opacity = 255;
+            }
         }
 
         // 4. Update header strip clock and telemetry
