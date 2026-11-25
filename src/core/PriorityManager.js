@@ -106,6 +106,8 @@ export class PriorityManager extends Signals.EventEmitter {
             media: { active: false },
             timer: { active: false },
             privacy: { active: false, camera: false, mic: false, micMuted: false },
+            task: { active: false },
+            recording: { active: false },
         };
 
         this._meta = {
@@ -469,7 +471,7 @@ export class PriorityManager extends Signals.EventEmitter {
     }
 
     _computeModel() {
-        const { media, timer, privacy } = this._persistent;
+        const { media, timer, privacy, task, recording } = this._persistent;
         const {
             hideInFullscreen,
             showIdlePill,
@@ -525,11 +527,31 @@ export class PriorityManager extends Signals.EventEmitter {
         const hasMedia = Boolean(media.active);
         const hasTimer = Boolean(timer.active);
         const hasPrivacy = Boolean(privacy.active && (privacy.camera || privacy.mic));
+        const hasTask = Boolean(task?.active);
+        const hasRecording = Boolean(recording?.active);
         const allowPersistentExpand = !this._persistentMinimized;
         const currentMeta = {
             ...this._meta,
             persistentMinimized: this._persistentMinimized,
         };
+
+        if (hasRecording) {
+            return {
+                state: IslandState.COMPACT_PILL,
+                primary: 'recording',
+                persistent: this._persistent,
+                meta: currentMeta,
+            };
+        }
+
+        if (allowPersistentExpand && hasTask) {
+            return {
+                state: IslandState.COMPACT_PILL,
+                primary: 'task',
+                persistent: this._persistent,
+                meta: currentMeta,
+            };
+        }
 
         if (allowPersistentExpand && hasMedia && (hasTimer || hasPrivacy)) {
             return {
@@ -582,7 +604,7 @@ export class PriorityManager extends Signals.EventEmitter {
             };
         }
 
-        if (topbarIntegrationMode === 'merged-pill' && panelVisible) {
+        if (topbarIntegrationMode === 'merged-pill' && panelVisible && !inFullscreen) {
             return {
                 state: IslandState.INTEGRATED_CLOCK,
                 primary: 'integrated-clock',

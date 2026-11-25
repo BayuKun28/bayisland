@@ -1,4 +1,5 @@
 import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
@@ -12,6 +13,7 @@ import { CompactView } from './CompactView.js';
 import { SplitView } from './SplitView.js';
 import { TransientView } from './TransientView.js';
 import { ExpandedView } from './ExpandedView.js';
+import { BayIslandViewport } from './components/BayIslandViewport.js';
 
 function isSamePalette(a, b) {
     if (a === b)
@@ -35,118 +37,6 @@ function isSamePalette(a, b) {
         a.accentFgCss === b.accentFgCss;
 }
 
-const BayIslandViewport = GObject.registerClass(
-class BayIslandViewport extends St.Widget {
-    _init(params = {}) {
-        super._init({
-            clip_to_allocation: false,
-            reactive: false,
-            x_expand: true,
-            y_expand: true,
-            ...params,
-        });
-        this._lockedSize = null;
-    }
-
-    setChild(actor, lockedSize = null) {
-        this._lockedSize = lockedSize
-            ? {
-                width: Math.max(1, Math.round(lockedSize.width)),
-                height: Math.max(1, Math.round(lockedSize.height)),
-            }
-            : null;
-        this.clip_to_allocation = Boolean(this._lockedSize);
-
-        const cur = this.get_first_child();
-        if (cur === actor) {
-            this.queue_relayout();
-            return;
-        }
-        if (cur) {
-            this.remove_child(cur);
-            try {
-                cur.destroy();
-            } catch {
-                // Already destroyed
-            }
-        }
-        if (actor)
-            this.add_child(actor);
-        this.queue_relayout();
-    }
-
-    setLockedSize(lockedSize) {
-        const next = lockedSize
-            ? {
-                width: Math.max(1, Math.round(lockedSize.width)),
-                height: Math.max(1, Math.round(lockedSize.height)),
-            }
-            : null;
-        if (next && this._lockedSize &&
-            next.width === this._lockedSize.width &&
-            next.height === this._lockedSize.height)
-            return;
-        if (!next && !this._lockedSize)
-            return;
-        this._lockedSize = next;
-        this.clip_to_allocation = Boolean(this._lockedSize);
-        this.queue_relayout();
-    }
-
-    vfunc_get_preferred_width(forHeight) {
-        const child = this.get_first_child();
-        if (!child || !child.visible)
-            return [0, 0];
-        const [minW, natW] = child.get_preferred_width(forHeight);
-        if (this._lockedSize)
-            return [0, Math.max(minW, this._lockedSize.width)];
-        return [minW, natW];
-    }
-
-    vfunc_get_preferred_height(forWidth) {
-        const child = this.get_first_child();
-        if (!child || !child.visible)
-            return [0, 0];
-        const queryW = this._lockedSize ? this._lockedSize.width : forWidth;
-        const [minH, natH] = child.get_preferred_height(queryW);
-        if (this._lockedSize)
-            return [0, Math.max(minH, this._lockedSize.height)];
-        return [minH, natH];
-    }
-
-    vfunc_allocate(box) {
-        this.set_allocation(box);
-        const child = this.get_first_child();
-        if (!child || !child.visible)
-            return;
-
-        const availW = Math.max(0, box.x2 - box.x1);
-        const availH = Math.max(0, box.y2 - box.y1);
-
-        let childW;
-        let childH;
-        if (this._lockedSize) {
-            const [minW] = child.get_preferred_width(-1);
-            childW = Math.max(minW, this._lockedSize.width);
-            const [minH] = child.get_preferred_height(childW);
-            childH = Math.max(minH, this._lockedSize.height);
-        } else {
-            const [minW] = child.get_preferred_width(-1);
-            childW = Math.max(minW, availW);
-            const [minH] = child.get_preferred_height(childW);
-            childH = Math.max(minH, availH);
-        }
-
-        const dx = Math.round((availW - childW) / 2);
-        const cBox = new Clutter.ActorBox({
-            x1: dx,
-            y1: 0,
-            x2: dx + childW,
-            y2: childH,
-        });
-        child.allocate(cBox);
-    }
-});
 
 /**
  * Root Chrome container & Adaptive Positioning Manager for BayIsland v2.1.
@@ -168,7 +58,10 @@ export class IslandContainer {
         this._topbarIntegrationMode = 'merged-pill';
         this._mergedClockRightClickGnome = true;
         this._topMargin = 6;
+        this._expandedTopMargin = 6;
         this._idleHoverDwellMs = 160;
+        this._monitorMode = 'primary';
+        this._commandRunnerEnabled = true;
         this._palette = null;
 
         this._snapshots = {
@@ -185,6 +78,10 @@ export class IslandContainer {
         this._grabSuspended = false;
         this._restacking = false;
         this._destroying = false;
+        this._syncingEnv = false;
+        this._pendingEnvSyncId = 0;
+        this._pendingGeomSyncId = 0;
+        this._pendingTopOrderId = 0;
         this._disposedActors = new WeakSet();
         this._deferredExpandedCleanup = false;
         this._bridgeRect = null;
@@ -192,6 +89,7 @@ export class IslandContainer {
         this._resumeSafetyTimerId = 0;
         this._hoverDwellTimerId = 0;
         this._hoverLeaveTimerId = 0;
+        this._integratedLeaveTimerId = 0;
         this._lastState = IslandState.HIDDEN;
         this._lastStyleClass = null;
         this._lastInlineStyle = undefined;
@@ -245,6 +143,8 @@ export class IslandContainer {
             onExpand: () => this._priority.expand(),
             onMediaToggle: () => this._cb.onMediaPlayPause?.(),
             onToggleMinimizePersistent: () => this._priority?.toggleMinimizePersistent(),
+            onTaskClick: task => this.focusTerminalPid(task?.terminalPid),
+            onStopRecording: () => this._cb.onStopRecording?.(),
         });
         this._splitView = new SplitView({
             onExpandTab: tab => this._priority.expand(tab),
@@ -266,6 +166,7 @@ export class IslandContainer {
             onCollapse: () => this._priority.collapse(),
             onAcquireTextModal: entry => this.acquireTextModal(entry),
             onReleaseTextModal: () => this.releaseTextModal(),
+            onRunnerLayoutChanged: () => this._repositionCurrent(),
         }, this._timers);
 
         this._bindEvents();
@@ -327,7 +228,29 @@ export class IslandContainer {
             if (this._destroying || !this._shell)
                 return;
             const hovered = Boolean(this._shell?.hover);
-            this._priority.setHovered(hovered);
+            const model = this._priority.getModel();
+            const isIntegratedExpandable =
+                model?.state === IslandState.INTEGRATED_CLOCK &&
+                model?.preset !== 'hover-pill' &&
+                model?.expandOnHover;
+
+            if (hovered) {
+                if (this._integratedLeaveTimerId) {
+                    this._timers.clear(this._integratedLeaveTimerId);
+                    this._integratedLeaveTimerId = 0;
+                }
+                this._priority.setHovered(true);
+            } else if (isIntegratedExpandable) {
+                if (!this._integratedLeaveTimerId) {
+                    this._integratedLeaveTimerId = this._timers.setTimeout(140, () => {
+                        this._integratedLeaveTimerId = 0;
+                        if (!this._destroying && !this._shell?.hover)
+                            this._priority.setHovered(false);
+                    });
+                }
+            } else {
+                this._priority.setHovered(false);
+            }
             this._handleHoverTransition(hovered);
         });
 
@@ -357,7 +280,11 @@ export class IslandContainer {
                     return Clutter.EVENT_STOP;
                 }
                 if (btn === Clutter.BUTTON_PRIMARY && typeof model.transient?.onActivate === 'function') {
-                    model.transient.onActivate();
+                    try {
+                        model.transient.onActivate();
+                    } catch {
+                        // Ignore activation failure on stale/disposed notif
+                    }
                     this._transientView?.animateDismiss?.(() => {
                         this._priority.dismissTransient(model.transient?.id);
                     }) || this._priority.dismissTransient(model.transient?.id);
@@ -421,57 +348,76 @@ export class IslandContainer {
         });
 
         const panelBox = Main.layoutManager.panelBox;
-        this._signals.connect(panelBox, 'notify::visible', () => this._onEnvironmentChanged());
-        this._signals.connect(panelBox, 'notify::y', () => this._onEnvironmentChanged());
-        this._signals.connect(panelBox, 'notify::translation-y', () => this._onEnvironmentChanged());
-        this._signals.connect(panelBox, 'notify::height', () => this._onEnvironmentChanged());
-        const syncFromPanelGeometry = () => {
-            if (!this._destroying && this._topbarIntegrationMode === 'merged-pill') {
-                this._topBar?.syncPanelGeometry?.();
-                this._repositionCurrent();
-            }
+        const scheduleEnvChanged = () => {
+            if (this._destroying || !this._shell || this._pendingEnvSyncId)
+                return;
+            this._pendingEnvSyncId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                this._pendingEnvSyncId = 0;
+                if (!this._destroying && this._shell)
+                    this._onEnvironmentChanged();
+                return GLib.SOURCE_REMOVE;
+            });
         };
+
+        const schedulePanelGeomSync = () => {
+            if (this._destroying || this._topbarIntegrationMode !== 'merged-pill' || this._pendingGeomSyncId)
+                return;
+            this._pendingGeomSyncId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                this._pendingGeomSyncId = 0;
+                if (!this._destroying && this._topbarIntegrationMode === 'merged-pill') {
+                    this._topBar?.syncPanelGeometry?.();
+                    this._repositionCurrent();
+                }
+                return GLib.SOURCE_REMOVE;
+            });
+        };
+
+        this._signals.connect(panelBox, 'notify::visible', scheduleEnvChanged);
+        this._signals.connect(panelBox, 'notify::y', scheduleEnvChanged);
+        this._signals.connect(panelBox, 'notify::translation-y', scheduleEnvChanged);
+        this._signals.connect(panelBox, 'notify::height', scheduleEnvChanged);
+
         if (Main.panel) {
-            this._signals.connect(Main.panel, 'style-changed', syncFromPanelGeometry);
-            this._signals.connect(Main.panel, 'notify::height', syncFromPanelGeometry);
+            this._signals.connect(Main.panel, 'style-changed', schedulePanelGeomSync);
+            this._signals.connect(Main.panel, 'notify::height', schedulePanelGeomSync);
         }
         if (Main.panel?._leftBox)
-            this._signals.connect(Main.panel._leftBox, 'notify::width', syncFromPanelGeometry);
+            this._signals.connect(Main.panel._leftBox, 'notify::width', schedulePanelGeomSync);
         if (Main.panel?._rightBox)
-            this._signals.connect(Main.panel._rightBox, 'notify::width', syncFromPanelGeometry);
+            this._signals.connect(Main.panel._rightBox, 'notify::width', schedulePanelGeomSync);
         for (const areaKey of ['quickSettings', 'activities']) {
             const area = Main.panel?.statusArea?.[areaKey];
             const areaActor = area?.container ?? area;
             if (areaActor && typeof areaActor.connect === 'function') {
-                this._signals.connect(areaActor, 'notify::height', syncFromPanelGeometry);
-                this._signals.connect(areaActor, 'style-changed', syncFromPanelGeometry);
+                this._signals.connect(areaActor, 'notify::height', schedulePanelGeomSync);
+                this._signals.connect(areaActor, 'style-changed', schedulePanelGeomSync);
             }
         }
-        this._signals.connect(Main.overview, 'showing', () => this._onEnvironmentChanged());
-        this._signals.connect(Main.overview, 'shown', () => this._onEnvironmentChanged());
-        this._signals.connect(Main.overview, 'hiding', () => this._onEnvironmentChanged());
-        this._signals.connect(Main.overview, 'hidden', () => this._onEnvironmentChanged());
+        this._signals.connect(Main.overview, 'showing', scheduleEnvChanged);
+        this._signals.connect(Main.overview, 'shown', scheduleEnvChanged);
+        this._signals.connect(Main.overview, 'hiding', scheduleEnvChanged);
+        this._signals.connect(Main.overview, 'hidden', scheduleEnvChanged);
         this._signals.connect(Main.layoutManager, 'monitors-changed', () => this._onEnvironmentChanged());
         this._signals.connect(global.display, 'in-fullscreen-changed', () => this._onEnvironmentChanged());
         this._signals.connect(global.display, 'window-created', () => {
             if (!this._destroying && this._shell && this._priority.getModel()?.state !== IslandState.HIDDEN)
-                this._ensureShellTopOrder();
+                this._scheduleShellTopOrder();
         });
         this._signals.connect(global.display, 'notify::focus-window', () => {
             if (!this._destroying && this._shell && this._priority.getModel()?.state !== IslandState.HIDDEN)
-                this._ensureShellTopOrder();
+                this._scheduleShellTopOrder();
         });
         if (GObject.signal_lookup('restacked', global.display.constructor)) {
             this._signals.connect(global.display, 'restacked', () => {
                 if (!this._destroying && this._shell && this._priority.getModel()?.state !== IslandState.HIDDEN)
-                    this._ensureShellTopOrder();
+                    this._scheduleShellTopOrder();
             });
         }
         this._signals.connect(Main.sessionMode, 'updated', () => this._onEnvironmentChanged());
         this._signals.connect(global.window_manager, 'switch-workspace', () => this._onEnvironmentChanged());
         this._signals.connect(Main.uiGroup, 'child-added', (_g, actor) => {
             if (!this._destroying && this._shell && actor !== this._shell)
-                this._ensureShellTopOrder();
+                this._scheduleShellTopOrder();
         });
         this._signals.connect(Main.uiGroup, 'child-removed', (_g, actor) => {
             if (this._destroying || !this._shell)
@@ -480,7 +426,7 @@ export class IslandContainer {
                 this._destroying = true;
                 return;
             }
-            this._ensureShellTopOrder();
+            this._scheduleShellTopOrder();
         });
 
         this._signals.connect(this._priority, 'model-changed', (_src, payload) => {
@@ -496,6 +442,10 @@ export class IslandContainer {
         if (this._hoverLeaveTimerId) {
             this._timers.clear(this._hoverLeaveTimerId);
             this._hoverLeaveTimerId = 0;
+        }
+        if (this._integratedLeaveTimerId) {
+            this._timers.clear(this._integratedLeaveTimerId);
+            this._integratedLeaveTimerId = 0;
         }
     }
 
@@ -648,6 +598,26 @@ export class IslandContainer {
             }
 
             return Clutter.EVENT_PROPAGATE;
+        }
+
+        if (model.state === IslandState.EXPANDED_MODAL && event.type() === Clutter.EventType.KEY_PRESS) {
+            const mods = event.get_state?.() ?? 0;
+            if ((mods & Clutter.ModifierType.CONTROL_MASK) !== 0) {
+                const sym = event.get_key_symbol();
+                const order = this._priority.getTabOrder?.() ?? ['home', 'media', 'power', 'clipboard', 'shelf'];
+                const numIdx = [Clutter.KEY_1, Clutter.KEY_2, Clutter.KEY_3, Clutter.KEY_4, Clutter.KEY_5].indexOf(sym);
+                if (numIdx !== -1 && order[numIdx]) {
+                    this._priority.setExpandedTab(order[numIdx]);
+                    return Clutter.EVENT_STOP;
+                }
+                if (sym === Clutter.KEY_Tab || sym === Clutter.KEY_ISO_Left_Tab) {
+                    const curIdx = Math.max(0, order.indexOf(model.tab));
+                    const shift = sym === Clutter.KEY_ISO_Left_Tab || (mods & Clutter.ModifierType.SHIFT_MASK) !== 0;
+                    const nextIdx = (curIdx + (shift ? -1 : 1) + order.length) % order.length;
+                    this._priority.setExpandedTab(order[nextIdx]);
+                    return Clutter.EVENT_STOP;
+                }
+            }
         }
 
         if (model.state !== IslandState.EXPANDED_MODAL || model.tab !== 'shelf')
@@ -823,13 +793,76 @@ export class IslandContainer {
         // GrabHelper keeps compositor modal active; no separate Main.popModal needed
     }
 
+    setCommandRunnerEnabled(enabled) {
+        this._commandRunnerEnabled = Boolean(enabled);
+        this._expandedView?.setCommandRunnerEnabled(this._commandRunnerEnabled);
+    }
+
+    openQuickRunner() {
+        if (!this._commandRunnerEnabled) {
+            this._priority?.toggleExpand();
+            return;
+        }
+
+        const model = this._priority?.getModel();
+        if (model?.state === IslandState.EXPANDED_MODAL) {
+            if (this._expandedView?.isRunnerFocused()) {
+                this._priority?.collapse();
+            } else {
+                this._expandedView?.focusRunner();
+            }
+        } else {
+            this._priority?.expand();
+            this._timers?.setTimeout(60, () => {
+                if (!this._destroying && this._priority?.getModel()?.state === IslandState.EXPANDED_MODAL)
+                    this._expandedView?.focusRunner();
+            });
+        }
+    }
+
+    focusTerminalPid(pid) {
+        if (!pid)
+            return false;
+        try {
+            const actors = global.get_window_actors ? global.get_window_actors() : [];
+            for (const actor of actors) {
+                const metaWin = actor.meta_window;
+                if (!metaWin)
+                    continue;
+                const winPid = metaWin.get_pid?.();
+                if (winPid === pid) {
+                    metaWin.activate(global.get_current_time());
+                    return true;
+                }
+            }
+            // Fallback: check window wm_class if pid is a shell or subshell of terminal emulator
+            for (const actor of actors) {
+                const metaWin = actor.meta_window;
+                if (!metaWin)
+                    continue;
+                const cls = (metaWin.get_wm_class?.() || '').toLowerCase();
+                if (cls.includes('terminal') || cls.includes('pty') || cls.includes('alacritty') ||
+                    cls.includes('kitty') || cls.includes('wezterm') || cls.includes('foot') ||
+                    cls.includes('tilix') || cls.includes('terminator')) {
+                    metaWin.activate(global.get_current_time());
+                    return true;
+                }
+            }
+        } catch (e) {
+            logError(e, 'BayIsland focusTerminalPid failed');
+        }
+        return false;
+    }
+
     setAppearance({
         pillStyle,
         collisionMode,
         topbarIntegrationMode,
         mergedClockRightClickGnome,
         topMargin,
+        expandedTopMargin,
         idleHoverDwellMs,
+        monitorMode,
     }) {
         if (this._destroying || !this._shell)
             return;
@@ -843,8 +876,12 @@ export class IslandContainer {
             this._mergedClockRightClickGnome = Boolean(mergedClockRightClickGnome);
         if (topMargin !== undefined)
             this._topMargin = topMargin;
+        if (expandedTopMargin !== undefined)
+            this._expandedTopMargin = expandedTopMargin;
         if (idleHoverDwellMs !== undefined)
             this._idleHoverDwellMs = Math.max(50, Math.min(600, Math.round(idleHoverDwellMs)));
+        if (monitorMode !== undefined)
+            this._monitorMode = monitorMode === 'active' ? 'active' : 'primary';
 
         const model = this._priority.getModel();
         this._syncTopBarSlotMetrics(model);
@@ -948,9 +985,11 @@ export class IslandContainer {
     }
 
     _isPanelVisiblyBlockingTop() {
+        const monitor = Main.layoutManager.primaryMonitor;
+        if (monitor?.inFullscreen)
+            return false;
         if (this._topBar)
             return this._topBar.isPanelVisiblyShowing();
-        const monitor = Main.layoutManager.primaryMonitor;
         const panelBox = Main.layoutManager.panelBox;
         if (!monitor || !panelBox || this._disposedActors.has(panelBox) || !panelBox.visible)
             return false;
@@ -1032,10 +1071,20 @@ export class IslandContainer {
         return metricsChanged;
     }
 
+    _getTargetMonitor() {
+        if (this._monitorMode === 'active' && this._topbarIntegrationMode !== 'merged-pill') {
+            const idx = global.display?.get_current_monitor?.();
+            const mon = Number.isInteger(idx) ? Main.layoutManager.monitors?.[idx] : null;
+            if (mon)
+                return mon;
+        }
+        return Main.layoutManager.primaryMonitor;
+    }
+
     _syncEnvironment() {
         if (this._destroying)
             return false;
-        const monitor = Main.layoutManager.primaryMonitor;
+        const monitor = this._getTargetMonitor();
         return this._priority.setEnvironment({
             panelVisible: this._isPanelVisiblyBlockingTop(),
             inFullscreen: Boolean(monitor?.inFullscreen),
@@ -1043,13 +1092,18 @@ export class IslandContainer {
     }
 
     _onEnvironmentChanged() {
-        if (this._destroying || !this._shell)
+        if (this._destroying || !this._shell || this._syncingEnv)
             return;
-        this._syncEnvironment();
-        this._topBar?.syncPanelGeometry();
-        this._repositionCurrent();
-        if (this._priority.getModel()?.state !== IslandState.HIDDEN)
-            this._ensureShellTopOrder();
+        this._syncingEnv = true;
+        try {
+            this._syncEnvironment();
+            this._topBar?.syncPanelGeometry();
+            this._repositionCurrent();
+            if (this._priority.getModel()?.state !== IslandState.HIDDEN)
+                this._ensureShellTopOrder();
+        } finally {
+            this._syncingEnv = false;
+        }
     }
 
     _syncIdleHitboxMetrics(model = this._priority?.getModel()) {
@@ -1078,7 +1132,7 @@ export class IslandContainer {
     }
 
     _computeCoords(width, model = this._priority?.getModel(), itemHeight = null) {
-        const monitor = Main.layoutManager.primaryMonitor;
+        const monitor = this._getTargetMonitor();
         if (!monitor)
             return { x: 0, y: 0 };
 
@@ -1103,6 +1157,17 @@ export class IslandContainer {
         }
 
         const x = monitor.x + Math.round((monitor.width - width) / 2);
+
+        if (model?.state === IslandState.EXPANDED_MODAL) {
+            const expGap = this._expandedTopMargin ?? this._topMargin ?? 6;
+            let y;
+            if (panelVisible && (this._collisionMode === 'drop-below' || this._topbarIntegrationMode === 'merged-pill')) {
+                y = Math.round(metrics.panelBottom + expGap);
+            } else {
+                y = Math.round(monitor.y + expGap);
+            }
+            return { x, y };
+        }
 
         if ((model?.state === IslandState.IDLE_BAR || model?.state === IslandState.HOVER_PEEK) &&
             !panelVisible &&
@@ -1142,7 +1207,7 @@ export class IslandContainer {
         if (this._destroying || !this._shell || !this._morph || this._inRenderModel)
             return;
         const model = this._priority.getModel();
-        if (!model || model.state === IslandState.HIDDEN || this._deferredExpandedCleanup || this._morph.isCollapsing())
+        if (!model || model.state === IslandState.HIDDEN || this._deferredExpandedCleanup || this._morph.isCollapsing() || this._morph.isMorphing())
             return;
 
         this._syncIdleHitboxMetrics(model);
@@ -1263,6 +1328,16 @@ export class IslandContainer {
                 return false;
         }
         return true;
+    }
+
+    _scheduleShellTopOrder() {
+        if (this._destroying || !this._shell || this._pendingTopOrderId)
+            return;
+        this._pendingTopOrderId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            this._pendingTopOrderId = 0;
+            this._ensureShellTopOrder();
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     _ensureShellTopOrder() {
@@ -1417,10 +1492,11 @@ export class IslandContainer {
                     global.compositor.disable_unredirect();
                 else
                     global.compositor.enable_unredirect();
-            } else if (want) {
-                Meta.disable_unredirect_for_display(global.display);
-            } else {
-                Meta.enable_unredirect_for_display(global.display);
+            } else if (typeof Meta.disable_unredirect_for_display === 'function') {
+                if (want)
+                    Meta.disable_unredirect_for_display(global.display);
+                else
+                    Meta.enable_unredirect_for_display(global.display);
             }
             this._unredirectDisabled = want;
         } catch {
@@ -1476,7 +1552,6 @@ export class IslandContainer {
                 this._topBar?.setSlotReservation({ active: false });
                 this._cleanupDeferredExpandedTab();
                 this._morph.setEqualizerPlaying(false);
-                this._expandedView.destroyCurrentTab();
                 const coords = this._computeCoords(172, model);
                 this._morph.morphTo({
                     x: coords.x,
@@ -1494,14 +1569,17 @@ export class IslandContainer {
                 return;
             }
 
-            // Keep stage composited while BayIsland (even IDLE_BAR) is shown so
-            // Mutter never skips painting the island over maximized/fullscreen apps,
-            // and re-assert chrome stacking above fullscreen/top windows.
-            this._setUnredirectDisabled(true);
+            // Disable unredirect only for active overlays/modals so idle states preserve fullscreen scanout
+            const needsUnredirectBlock =
+                model.state !== IslandState.IDLE_BAR &&
+                model.state !== IslandState.INTEGRATED_CLOCK;
+            this._setUnredirectDisabled(needsUnredirectBlock);
             this._ensureShellTopOrder();
             this._syncIdleHitboxMetrics(model);
             this._syncTopBarSlotMetrics(model);
-            this._topBar?.setPanelHold(model.state === IslandState.EXPANDED_MODAL);
+            const monitor = Main.layoutManager.primaryMonitor;
+            const holdPanel = model.state === IslandState.EXPANDED_MODAL && !monitor?.inFullscreen;
+            this._topBar?.setPanelHold(holdPanel);
 
             // Smooth two-phase collapse when returning from any dark surface -> IDLE_BAR
             if (model.state === IslandState.IDLE_BAR &&
@@ -1572,8 +1650,6 @@ export class IslandContainer {
             }
 
             this._cleanupDeferredExpandedTab();
-            if (model.state !== IslandState.EXPANDED_MODAL)
-                this._expandedView.destroyCurrentTab();
 
             this._applyShellStyleClasses(model.state, model);
 
@@ -1619,7 +1695,9 @@ export class IslandContainer {
                     builtChild = this._transientView.render(model, this._palette);
                     break;
                 case IslandState.EXPANDED_MODAL:
-                    builtChild = this._expandedView.render(model, this._palette, this._snapshots);
+                    builtChild = this._expandedView.hasRoot()
+                        ? this._expandedView.activate(model, this._palette, this._snapshots)
+                        : this._expandedView.render(model, this._palette, this._snapshots);
                     break;
                 }
             }
@@ -1704,6 +1782,18 @@ export class IslandContainer {
 
     destroy() {
         this._destroying = true;
+        if (this._pendingEnvSyncId) {
+            try { GLib.source_remove(this._pendingEnvSyncId); } catch {}
+            this._pendingEnvSyncId = 0;
+        }
+        if (this._pendingGeomSyncId) {
+            try { GLib.source_remove(this._pendingGeomSyncId); } catch {}
+            this._pendingGeomSyncId = 0;
+        }
+        if (this._pendingTopOrderId) {
+            try { GLib.source_remove(this._pendingTopOrderId); } catch {}
+            this._pendingTopOrderId = 0;
+        }
         this._transientDrag = null;
         this._topBar?.setPanelHold(false);
         this._topBar?.setSlotReservation({ active: false });

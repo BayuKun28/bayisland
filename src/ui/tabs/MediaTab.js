@@ -3,26 +3,21 @@ import Clutter from 'gi://Clutter';
 import Pango from 'gi://Pango';
 import St from 'gi://St';
 
-import { buildEqualizerWidget } from '../CompactView.js';
+import { buildEqualizerWidget } from '../components/EqualizerWidget.js';
 import { parseRgbaColor } from '../RingGauge.js';
+import { formatMediaDuration, sanitizeSingleLine } from '../../utils/Formatters.js';
 
 function formatMediaTime(us) {
     if (!Number.isFinite(us) || us <= 0)
         return '0:00';
-    const totalSec = Math.floor(us / 1_000_000);
-    const mins = Math.floor(totalSec / 60);
-    const secs = totalSec % 60;
-    return `${mins}:${String(secs).padStart(2, '0')}`;
+    return formatMediaDuration(Math.floor(us / 1_000_000));
 }
 
 function formatRemainingTime(posUs, lenUs) {
     if (!Number.isFinite(lenUs) || lenUs <= 0)
         return '0:00';
     const remUs = Math.max(0, lenUs - Math.max(0, posUs || 0));
-    const totalSec = Math.floor(remUs / 1_000_000);
-    const mins = Math.floor(totalSec / 60);
-    const secs = totalSec % 60;
-    return `-${mins}:${String(secs).padStart(2, '0')}`;
+    return formatMediaDuration(Math.floor(remUs / 1_000_000), true);
 }
 
 export class MediaTab {
@@ -30,6 +25,12 @@ export class MediaTab {
         this._cb = callbacks;
         this._root = null;
         this._lastPalette = null;
+
+        this._stageActive = null;
+        this._stageMounted = false;
+        this._lastBusName = null;
+        this._lastArtIcon = null;
+        this._lastPlayerName = null;
 
         this._scrubTrack = null;
         this._scrubFill = null;
@@ -40,6 +41,10 @@ export class MediaTab {
         this._remainingLabel = null;
         this._titleLabel = null;
         this._artistLabel = null;
+        this._playerLabel = null;
+        this._artIconWidget = null;
+        this._prevBtn = null;
+        this._nextBtn = null;
         this._playIcon = null;
         this._eqBox = null;
 
@@ -54,12 +59,382 @@ export class MediaTab {
         this._audioCard = null;
     }
 
+    _resetMediaRefs() {
+        this._scrubTrack = null;
+        this._scrubFill = null;
+        this._scrubKnob = null;
+        this._elapsedLabel = null;
+        this._remainingLabel = null;
+        this._titleLabel = null;
+        this._artistLabel = null;
+        this._playerLabel = null;
+        this._artIconWidget = null;
+        this._prevBtn = null;
+        this._nextBtn = null;
+        this._playIcon = null;
+        this._eqBox = null;
+        this._lastArtIcon = null;
+        this._lastPlayerName = null;
+    }
+
+    _buildEmptyStage() {
+        const empty = new St.BoxLayout({
+            vertical: true,
+            x_expand: true,
+            y_expand: true,
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
+            style: 'spacing: 8px;',
+        });
+        empty.add_child(new St.Icon({
+            icon_name: 'audio-x-generic-symbolic',
+            icon_size: 32,
+            style: 'color: #475569;',
+        }));
+        empty.add_child(new St.Label({
+            text: 'No active media player',
+            style_class: 'bayisland-media-artist',
+        }));
+        empty.add_child(new St.Label({
+            text: 'Audio controls appear when playback starts',
+            style_class: 'bayisland-muted-xs',
+        }));
+        return empty;
+    }
+
+    _buildActiveStage(media, palette) {
+        const acc = palette?.accentCss || '#93c5fd';
+        const accOnDark = palette?.accentOnDarkCss || acc;
+        const fg = palette?.accentFgCss || '#090d16';
+
+        // Top source indicator + inline multi-player switcher + equalizer
+        const srcRow = new St.BoxLayout({
+            x_expand: true,
+            style: 'spacing: 6px;',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        srcRow.add_child(new St.Widget({
+            style_class: 'bayisland-media-source-dot',
+            style: `background-color: ${accOnDark};`,
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+        this._playerLabel = new St.Label({
+            text: (media.playerName || 'MEDIA').toUpperCase(),
+            style_class: 'bayisland-media-player',
+            style: `color: ${accOnDark};`,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._lastPlayerName = this._playerLabel.text;
+        srcRow.add_child(this._playerLabel);
+
+        if (Array.isArray(media.players) && media.players.length > 1) {
+            for (const pl of media.players.slice(0, 3)) {
+                const pBtn = new St.Button({
+                    label: pl.identity,
+                    style_class: `bayisland-mini-pill-btn${pl.active ? ' bayisland-mini-pill-btn-active' : ''}`,
+                    ...(pl.active ? { style: `background-color: ${acc}; color: ${fg};` } : {}),
+                    reactive: true,
+                    can_focus: false,
+                    y_align: Clutter.ActorAlign.CENTER,
+                });
+                pBtn.connect('clicked', () => this._cb.onMediaSelectPlayer?.(pl.busName));
+                srcRow.add_child(pBtn);
+            }
+        }
+
+        const { eqBox, bars } = buildEqualizerWidget(4, accOnDark);
+        this._eqBox = eqBox;
+        this._eqBox.visible = media.status === 'Playing';
+        const waveHeights = [6, 12, 8, 11];
+        bars.forEach((bar, idx) => {
+            bar.height = waveHeights[idx % waveHeights.length];
+        });
+        srcRow.add_child(eqBox);
+        this._playerCard.add_child(srcRow);
+
+        // Hero Artwork (84x84) + Title / Artist
+        const heroRow = new St.BoxLayout({
+            x_expand: true,
+            style: 'spacing: 14px;',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
+        this._artIconWidget = new St.Icon({
+            ...(media.artIcon
+                ? { gicon: media.artIcon }
+                : { icon_name: 'audio-x-generic-symbolic' }),
+            icon_size: media.artIcon ? 84 : 38,
+        });
+        this._lastArtIcon = media.artIcon;
+
+        const artBtn = new St.Button({
+            reactive: true,
+            can_focus: false,
+            style_class: 'bayisland-art-hero',
+            clip_to_allocation: true,
+            child: this._artIconWidget,
+        });
+        artBtn.connect('clicked', () => this._cb.onMediaRaise?.());
+        heroRow.add_child(artBtn);
+
+        const textCol = new St.BoxLayout({
+            vertical: true,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+            style: 'spacing: 3px;',
+        });
+
+        this._titleLabel = new St.Label({
+            text: sanitizeSingleLine(media.title) || 'Unknown Title',
+            style_class: 'bayisland-media-title-hero',
+        });
+        this._titleLabel.clutter_text.single_line_mode = true;
+        this._titleLabel.clutter_text.line_wrap = false;
+        this._titleLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+        textCol.add_child(this._titleLabel);
+
+        this._artistLabel = new St.Label({
+            text: sanitizeSingleLine(media.artist) || 'Unknown Artist',
+            style_class: 'bayisland-media-artist',
+        });
+        this._artistLabel.clutter_text.single_line_mode = true;
+        this._artistLabel.clutter_text.line_wrap = false;
+        this._artistLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+        textCol.add_child(this._artistLabel);
+        heroRow.add_child(textCol);
+
+        this._playerCard.add_child(heroRow);
+
+        // Scrubber Bar + Elapsed / Negative Remaining Labels
+        const len = media.lengthUs > 0 ? media.lengthUs : 0;
+        const pos = Math.max(0, Math.min(len || 0, media.positionUs || 0));
+        const ratio = len > 0 ? pos / len : 0;
+        const fillW = Math.max(6, Math.round(this._scrubWidth * ratio));
+        const knobX = Math.max(0, Math.min(this._scrubWidth - 10, fillW - 5));
+
+        const scrubCol = new St.BoxLayout({
+            vertical: true,
+            x_expand: true,
+            style: 'spacing: 5px;',
+        });
+
+        this._scrubTrack = new St.Widget({
+            style_class: 'bayisland-scrub-hitbox',
+            width: this._scrubWidth,
+            height: 14,
+            layout_manager: new Clutter.BinLayout(),
+            reactive: Boolean(media.canSeek && len > 0),
+            clip_to_allocation: false,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._scrubTrack.add_child(new St.Widget({
+            style_class: 'bayisland-scrub-track',
+            width: this._scrubWidth,
+            x_align: Clutter.ActorAlign.START,
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+        this._scrubFill = new St.Widget({
+            style_class: 'bayisland-scrub-fill',
+            style: `background-color: ${acc};`,
+            width: fillW,
+            x_align: Clutter.ActorAlign.START,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._scrubKnob = new St.Widget({
+            style_class: 'bayisland-scrub-knob',
+            x_align: Clutter.ActorAlign.START,
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: len > 0,
+        });
+        this._scrubKnob.translation_x = knobX;
+        this._scrubTrack.add_child(this._scrubFill);
+        this._scrubTrack.add_child(this._scrubKnob);
+
+        let scrubDragging = false;
+        const seekFromEvent = ev => {
+            const [evX] = ev.get_coords();
+            const [trackX] = this._scrubTrack.get_transformed_position();
+            const w = this._scrubTrack.width || this._scrubWidth;
+            const frac = Math.max(0, Math.min(1, (evX - trackX) / w));
+            const nextFill = Math.max(6, Math.round(w * frac));
+            if (this._scrubFill)
+                this._scrubFill.width = nextFill;
+            if (this._scrubKnob)
+                this._scrubKnob.translation_x = Math.max(0, Math.min(w - 10, nextFill - 5));
+            this._cb.onMediaSeek?.(frac);
+        };
+        this._scrubTrack.connect('button-press-event', (_a, ev) => {
+            if (!this._scrubTrack.reactive || ev.get_button() !== Clutter.BUTTON_PRIMARY)
+                return Clutter.EVENT_PROPAGATE;
+            scrubDragging = true;
+            seekFromEvent(ev);
+            return Clutter.EVENT_STOP;
+        });
+        this._scrubTrack.connect('motion-event', (_a, ev) => {
+            if (!scrubDragging || !this._scrubTrack.reactive)
+                return Clutter.EVENT_PROPAGATE;
+            seekFromEvent(ev);
+            return Clutter.EVENT_STOP;
+        });
+        this._scrubTrack.connect('button-release-event', () => {
+            if (!scrubDragging)
+                return Clutter.EVENT_PROPAGATE;
+            scrubDragging = false;
+            return Clutter.EVENT_STOP;
+        });
+        this._scrubTrack.connect('leave-event', () => {
+            scrubDragging = false;
+            return Clutter.EVENT_PROPAGATE;
+        });
+        scrubCol.add_child(this._scrubTrack);
+
+        const timeRow = new St.BoxLayout({ x_expand: true });
+        this._elapsedLabel = new St.Label({
+            text: formatMediaTime(pos),
+            style_class: 'bayisland-time-label',
+            x_expand: true,
+        });
+        this._remainingLabel = new St.Label({
+            text: formatRemainingTime(pos, len),
+            style_class: 'bayisland-time-label',
+        });
+        timeRow.add_child(this._elapsedLabel);
+        timeRow.add_child(this._remainingLabel);
+        scrubCol.add_child(timeRow);
+        this._playerCard.add_child(scrubCol);
+
+        // Centered Transport Row (Circular Hero Play Button)
+        const ctrlRow = new St.BoxLayout({
+            style_class: 'bayisland-ctrl-row-hero',
+            x_expand: true,
+            y_expand: true,
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._prevBtn = new St.Button({
+            style_class: 'bayisland-ctrl-btn',
+            reactive: media.canGoPrevious !== false,
+            can_focus: false,
+            child: new St.Icon({ icon_name: 'media-skip-backward-symbolic', icon_size: 16 }),
+        });
+        this._prevBtn.connect('clicked', () => this._cb.onMediaPrev?.());
+        ctrlRow.add_child(this._prevBtn);
+
+        this._playIcon = new St.Icon({
+            icon_name: media.status === 'Playing'
+                ? 'media-playback-pause-symbolic'
+                : 'media-playback-start-symbolic',
+            icon_size: 19,
+            style: `color: ${fg};`,
+        });
+        const playBtn = new St.Button({
+            style_class: 'bayisland-ctrl-btn bayisland-ctrl-btn-play-hero',
+            style: `background-color: ${acc}; color: ${fg};`,
+            reactive: true,
+            can_focus: false,
+            child: this._playIcon,
+        });
+        playBtn.connect('clicked', () => this._cb.onMediaPlayPause?.());
+        ctrlRow.add_child(playBtn);
+
+        this._nextBtn = new St.Button({
+            style_class: 'bayisland-ctrl-btn',
+            reactive: media.canGoNext !== false,
+            can_focus: false,
+            child: new St.Icon({ icon_name: 'media-skip-forward-symbolic', icon_size: 16 }),
+        });
+        this._nextBtn.connect('clicked', () => this._cb.onMediaNext?.());
+        ctrlRow.add_child(this._nextBtn);
+        this._playerCard.add_child(ctrlRow);
+    }
+
+    _syncPlayerCard(media, palette = this._lastPalette) {
+        if (!this._playerCard)
+            return;
+        const isAct = Boolean(media?.active);
+        const busName = media?.busName || null;
+        if (isAct !== this._stageActive || !this._stageMounted || (isAct && busName !== this._lastBusName)) {
+            this._stageActive = isAct;
+            this._stageMounted = true;
+            this._lastBusName = busName;
+            this._playerCard.destroy_all_children();
+            this._resetMediaRefs();
+
+            if (!isAct) {
+                this._playerCard.add_child(this._buildEmptyStage());
+            } else {
+                this._buildActiveStage(media, palette);
+            }
+        } else if (isAct) {
+            this._updateActiveStage(media, palette);
+        }
+    }
+
+    _updateActiveStage(media, palette) {
+        if (this._titleLabel)
+            this._titleLabel.text = sanitizeSingleLine(media.title) || 'Unknown Title';
+        if (this._artistLabel)
+            this._artistLabel.text = sanitizeSingleLine(media.artist) || '';
+        if (this._playerLabel) {
+            const name = (media.playerName || 'MEDIA').toUpperCase();
+            if (this._lastPlayerName !== name) {
+                this._playerLabel.text = name;
+                this._lastPlayerName = name;
+            }
+        }
+        if (this._playIcon) {
+            this._playIcon.icon_name = media.status === 'Playing'
+                ? 'media-playback-pause-symbolic'
+                : 'media-playback-start-symbolic';
+        }
+        if (this._eqBox)
+            this._eqBox.visible = media.status === 'Playing';
+
+        if (this._artIconWidget && this._lastArtIcon !== media.artIcon) {
+            this._lastArtIcon = media.artIcon;
+            if (media.artIcon) {
+                this._artIconWidget.gicon = media.artIcon;
+                this._artIconWidget.icon_name = null;
+                this._artIconWidget.icon_size = 84;
+            } else {
+                this._artIconWidget.gicon = null;
+                this._artIconWidget.icon_name = 'audio-x-generic-symbolic';
+                this._artIconWidget.icon_size = 38;
+            }
+        }
+
+        if (this._prevBtn)
+            this._prevBtn.reactive = media.canGoPrevious !== false;
+        if (this._nextBtn)
+            this._nextBtn.reactive = media.canGoNext !== false;
+
+        const len = media.lengthUs > 0 ? media.lengthUs : 0;
+        const pos = Math.max(0, Math.min(len || 0, media.positionUs || 0));
+        const ratio = len > 0 ? pos / len : 0;
+        const trackW = this._scrubTrack?.width > 40 ? this._scrubTrack.width : this._scrubWidth;
+        const fillW = Math.max(6, Math.round(trackW * ratio));
+        const knobX = Math.max(0, Math.min(trackW - 10, fillW - 5));
+
+        if (this._scrubFill)
+            this._scrubFill.width = fillW;
+        if (this._scrubKnob) {
+            this._scrubKnob.visible = len > 0;
+            this._scrubKnob.translation_x = knobX;
+        }
+        if (this._scrubTrack)
+            this._scrubTrack.reactive = Boolean(media.canSeek && len > 0);
+        if (this._elapsedLabel)
+            this._elapsedLabel.text = formatMediaTime(pos);
+        if (this._remainingLabel)
+            this._remainingLabel.text = formatRemainingTime(pos, len);
+    }
+
     render(model, palette, quickSnapshot) {
         this.destroy();
 
         this._lastPalette = palette ?? null;
         const acc = palette?.accentCss || '#93c5fd';
-        const accOnDark = palette?.accentOnDarkCss || acc;
         const fg = palette?.accentFgCss || '#090d16';
 
         const media = model.persistent.media;
@@ -71,249 +446,20 @@ export class MediaTab {
             y_expand: true,
         });
 
-        // Left Column (374px): Compact Landscape Now Playing Stage
-        const playerCard = new St.BoxLayout({
+        // Left Column: Compact Landscape Now Playing Stage
+        this._playerCard = new St.BoxLayout({
             style_class: 'bayisland-bento-card bayisland-media-stage',
             vertical: true,
-            x_expand: false,
+            x_expand: true,
             y_expand: true,
         });
-        this._playerCard = playerCard;
 
-        if (!media?.active) {
-            const empty = new St.BoxLayout({
-                vertical: true,
-                x_expand: true,
-                y_expand: true,
-                x_align: Clutter.ActorAlign.CENTER,
-                y_align: Clutter.ActorAlign.CENTER,
-                style: 'spacing: 8px;',
-            });
-            empty.add_child(new St.Icon({
-                icon_name: 'audio-x-generic-symbolic',
-                icon_size: 32,
-                style: 'color: #475569;',
-            }));
-            empty.add_child(new St.Label({
-                text: 'No active media player',
-                style_class: 'bayisland-media-artist',
-            }));
-            empty.add_child(new St.Label({
-                text: 'Audio controls appear when playback starts',
-                style_class: 'bayisland-muted-xs',
-            }));
-            playerCard.add_child(empty);
-        } else {
-            // Top source indicator + inline multi-player switcher + equalizer
-            const srcRow = new St.BoxLayout({
-                x_expand: true,
-                style: 'spacing: 6px;',
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-            srcRow.add_child(new St.Widget({
-                style_class: 'bayisland-media-source-dot',
-                style: `background-color: ${accOnDark};`,
-                y_align: Clutter.ActorAlign.CENTER,
-            }));
-            srcRow.add_child(new St.Label({
-                text: (media.playerName || 'MEDIA').toUpperCase(),
-                style_class: 'bayisland-media-player',
-                style: `color: ${accOnDark};`,
-                x_expand: true,
-                y_align: Clutter.ActorAlign.CENTER,
-            }));
+        this._stageActive = null;
+        this._stageMounted = false;
+        this._lastBusName = null;
+        this._syncPlayerCard(media, palette);
 
-            if (Array.isArray(media.players) && media.players.length > 1) {
-                for (const pl of media.players.slice(0, 3)) {
-                    const pBtn = new St.Button({
-                        label: pl.identity,
-                        style_class: `bayisland-mini-pill-btn${pl.active ? ' bayisland-mini-pill-btn-active' : ''}`,
-                        ...(pl.active ? { style: `background-color: ${acc}; color: ${fg};` } : {}),
-                        reactive: true,
-                        can_focus: false,
-                        y_align: Clutter.ActorAlign.CENTER,
-                    });
-                    pBtn.connect('clicked', () => this._cb.onMediaSelectPlayer?.(pl.busName));
-                    srcRow.add_child(pBtn);
-                }
-            }
-
-            const { eqBox, bars } = buildEqualizerWidget(4, accOnDark);
-            this._eqBox = eqBox;
-            this._eqBox.visible = media.status === 'Playing';
-            const waveHeights = [6, 12, 8, 11];
-            bars.forEach((bar, idx) => {
-                bar.height = waveHeights[idx % waveHeights.length];
-            });
-            srcRow.add_child(eqBox);
-            playerCard.add_child(srcRow);
-
-            // Hero Artwork (84x84) + Title / Artist
-            const heroRow = new St.BoxLayout({
-                x_expand: true,
-                style: 'spacing: 14px;',
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-
-            const artBtn = new St.Button({
-                reactive: true,
-                can_focus: false,
-                style_class: 'bayisland-art-hero',
-                clip_to_allocation: true,
-                child: new St.Icon({
-                    ...(media.artIcon
-                        ? { gicon: media.artIcon }
-                        : { icon_name: 'audio-x-generic-symbolic' }),
-                    icon_size: media.artIcon ? 84 : 38,
-                }),
-            });
-            artBtn.connect('clicked', () => this._cb.onMediaRaise?.());
-            heroRow.add_child(artBtn);
-
-            const textCol = new St.BoxLayout({
-                vertical: true,
-                x_expand: true,
-                y_align: Clutter.ActorAlign.CENTER,
-                style: 'spacing: 3px;',
-            });
-
-            this._titleLabel = new St.Label({
-                text: media.title || 'Unknown Title',
-                style_class: 'bayisland-media-title-hero',
-            });
-            this._titleLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
-            textCol.add_child(this._titleLabel);
-
-            this._artistLabel = new St.Label({
-                text: media.artist || 'Unknown Artist',
-                style_class: 'bayisland-media-artist',
-            });
-            this._artistLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
-            textCol.add_child(this._artistLabel);
-            heroRow.add_child(textCol);
-
-            playerCard.add_child(heroRow);
-
-            // Scrubber Bar + Elapsed / Negative Remaining Labels
-            const len = media.lengthUs > 0 ? media.lengthUs : 0;
-            const pos = Math.max(0, Math.min(len || 0, media.positionUs || 0));
-            const ratio = len > 0 ? pos / len : 0;
-            const fillW = Math.max(6, Math.round(this._scrubWidth * ratio));
-
-            const scrubCol = new St.BoxLayout({
-                vertical: true,
-                x_expand: true,
-                style: 'spacing: 5px;',
-            });
-
-            this._scrubTrack = new St.Widget({
-                style_class: 'bayisland-scrub-hitbox',
-                width: this._scrubWidth,
-                height: 14,
-                layout_manager: new Clutter.BinLayout(),
-                reactive: Boolean(media.canSeek && len > 0),
-                clip_to_allocation: false,
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-            this._scrubTrack.add_child(new St.Widget({
-                style_class: 'bayisland-scrub-track',
-                width: this._scrubWidth,
-                x_align: Clutter.ActorAlign.START,
-                y_align: Clutter.ActorAlign.CENTER,
-            }));
-            this._scrubFill = new St.Widget({
-                style_class: 'bayisland-scrub-fill',
-                style: `background-color: ${acc};`,
-                width: fillW,
-                x_align: Clutter.ActorAlign.START,
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-            this._scrubKnob = new St.Widget({
-                style_class: 'bayisland-scrub-knob',
-                style: `background-color: #ffffff; margin-left: ${Math.max(0, Math.min(this._scrubWidth - 10, fillW - 5))}px;`,
-                x_align: Clutter.ActorAlign.START,
-                y_align: Clutter.ActorAlign.CENTER,
-                visible: len > 0,
-            });
-            this._scrubTrack.add_child(this._scrubFill);
-            this._scrubTrack.add_child(this._scrubKnob);
-
-            if (media.canSeek && len > 0) {
-                this._scrubTrack.connect('button-press-event', (_a, ev) => {
-                    const [evX] = ev.get_coords();
-                    const [trackX] = this._scrubTrack.get_transformed_position();
-                    const w = this._scrubTrack.width || this._scrubWidth;
-                    const frac = Math.max(0, Math.min(1, (evX - trackX) / w));
-                    const nextFill = Math.max(6, Math.round(w * frac));
-                    this._scrubFill.width = nextFill;
-                    if (this._scrubKnob)
-                        this._scrubKnob.style = `background-color: #ffffff; margin-left: ${Math.max(0, Math.min(w - 10, nextFill - 5))}px;`;
-                    this._cb.onMediaSeek?.(frac);
-                    return Clutter.EVENT_STOP;
-                });
-            }
-            scrubCol.add_child(this._scrubTrack);
-
-            const timeRow = new St.BoxLayout({ x_expand: true });
-            this._elapsedLabel = new St.Label({
-                text: formatMediaTime(pos),
-                style_class: 'bayisland-time-label',
-                x_expand: true,
-            });
-            this._remainingLabel = new St.Label({
-                text: formatRemainingTime(pos, len),
-                style_class: 'bayisland-time-label',
-            });
-            timeRow.add_child(this._elapsedLabel);
-            timeRow.add_child(this._remainingLabel);
-            scrubCol.add_child(timeRow);
-            playerCard.add_child(scrubCol);
-
-            // Centered Transport Row (Circular Hero Play Button)
-            const ctrlRow = new St.BoxLayout({
-                style_class: 'bayisland-ctrl-row-hero',
-                x_expand: true,
-                y_expand: true,
-                x_align: Clutter.ActorAlign.CENTER,
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-            const prevBtn = new St.Button({
-                style_class: 'bayisland-ctrl-btn',
-                reactive: media.canGoPrevious !== false,
-                can_focus: false,
-                child: new St.Icon({ icon_name: 'media-skip-backward-symbolic', icon_size: 16 }),
-            });
-            prevBtn.connect('clicked', () => this._cb.onMediaPrev?.());
-            ctrlRow.add_child(prevBtn);
-
-            this._playIcon = new St.Icon({
-                icon_name: media.status === 'Playing'
-                    ? 'media-playback-pause-symbolic'
-                    : 'media-playback-start-symbolic',
-                icon_size: 19,
-                style: `color: ${fg};`,
-            });
-            const playBtn = new St.Button({
-                style_class: 'bayisland-ctrl-btn bayisland-ctrl-btn-play-hero',
-                style: `background-color: ${acc}; color: ${fg};`,
-                reactive: true,
-                can_focus: false,
-                child: this._playIcon,
-            });
-            playBtn.connect('clicked', () => this._cb.onMediaPlayPause?.());
-            ctrlRow.add_child(playBtn);
-
-            const nextBtn = new St.Button({
-                style_class: 'bayisland-ctrl-btn',
-                reactive: media.canGoNext !== false,
-                can_focus: false,
-                child: new St.Icon({ icon_name: 'media-skip-forward-symbolic', icon_size: 16 }),
-            });
-            nextBtn.connect('clicked', () => this._cb.onMediaNext?.());
-            ctrlRow.add_child(nextBtn);
-            playerCard.add_child(ctrlRow);
-        }
-        root.add_child(playerCard);
+        root.add_child(this._playerCard);
 
         // Right Column: Audio Output & Volume Mixer
         const audioCard = new St.BoxLayout({
@@ -401,7 +547,8 @@ export class MediaTab {
                 cr.$dispose();
             }
         });
-        this._volCanvas.connect('button-press-event', (_a, ev) => {
+        let volDragging = false;
+        const setVolFromEvent = ev => {
             const [evX] = ev.get_coords();
             const [tx] = this._volCanvas.get_transformed_position();
             const tw = Math.max(1, this._volCanvas.width);
@@ -409,7 +556,47 @@ export class MediaTab {
             this._lastVolFrac = frac;
             this._volCanvas.queue_repaint();
             this._cb.onSetOutputVolume?.(frac);
+        };
+        this._volCanvas.connect('button-press-event', (_a, ev) => {
+            if (ev.get_button() !== Clutter.BUTTON_PRIMARY)
+                return Clutter.EVENT_PROPAGATE;
+            volDragging = true;
+            setVolFromEvent(ev);
             return Clutter.EVENT_STOP;
+        });
+        this._volCanvas.connect('motion-event', (_a, ev) => {
+            if (!volDragging)
+                return Clutter.EVENT_PROPAGATE;
+            setVolFromEvent(ev);
+            return Clutter.EVENT_STOP;
+        });
+        this._volCanvas.connect('button-release-event', () => {
+            if (!volDragging)
+                return Clutter.EVENT_PROPAGATE;
+            volDragging = false;
+            return Clutter.EVENT_STOP;
+        });
+        this._volCanvas.connect('leave-event', () => {
+            volDragging = false;
+            return Clutter.EVENT_PROPAGATE;
+        });
+        this._volCanvas.connect('scroll-event', (_a, ev) => {
+            const dir = ev.get_scroll_direction();
+            let delta = 0;
+            if (dir === Clutter.ScrollDirection.UP) delta = 0.05;
+            else if (dir === Clutter.ScrollDirection.DOWN) delta = -0.05;
+            else if (dir === Clutter.ScrollDirection.SMOOTH) {
+                const [, dy] = ev.get_scroll_delta();
+                delta = -dy * 0.03;
+            }
+            if (delta !== 0) {
+                const frac = Math.max(0, Math.min(1, this._lastVolFrac + delta));
+                this._lastVolFrac = frac;
+                this._volCanvas.queue_repaint();
+                this._cb.onSetOutputVolume?.(frac);
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
         });
         volRow.add_child(this._volCanvas);
 
@@ -547,52 +734,25 @@ export class MediaTab {
         this._rebuildDevCol(qa, pal);
     }
 
-    updateInPlace(model) {
+    setPalette(palette) {
+        if (palette)
+            this._lastPalette = palette;
+    }
+
+    updateInPlace(model, palette) {
         if (!this._root)
             return false;
-        const m = model.persistent?.media;
-        if (m?.active) {
-            if (this._titleLabel)
-                this._titleLabel.text = m.title || 'Unknown Title';
-            if (this._artistLabel)
-                this._artistLabel.text = m.artist || '';
-            if (this._playIcon) {
-                this._playIcon.icon_name = m.status === 'Playing'
-                    ? 'media-playback-pause-symbolic'
-                    : 'media-playback-start-symbolic';
-            }
-            if (this._eqBox)
-                this._eqBox.visible = m.status === 'Playing';
-
-            const len = m.lengthUs > 0 ? m.lengthUs : 0;
-            const pos = Math.max(0, Math.min(len || 0, m.positionUs || 0));
-            const ratio = len > 0 ? pos / len : 0;
-            const trackW = this._scrubTrack?.width > 40 ? this._scrubTrack.width : this._scrubWidth;
-            const fillW = Math.max(6, Math.round(trackW * ratio));
-            if (this._scrubFill)
-                this._scrubFill.width = fillW;
-            if (this._scrubKnob) {
-                this._scrubKnob.visible = len > 0;
-                this._scrubKnob.style = `background-color: #ffffff; margin-left: ${Math.max(0, Math.min(trackW - 10, fillW - 5))}px;`;
-            }
-            if (this._elapsedLabel)
-                this._elapsedLabel.text = formatMediaTime(pos);
-            if (this._remainingLabel)
-                this._remainingLabel.text = formatRemainingTime(pos, len);
-        }
+        if (palette)
+            this._lastPalette = palette;
+        this._syncPlayerCard(model.persistent?.media, this._lastPalette);
         return true;
     }
 
     destroy() {
-        this._scrubTrack = null;
-        this._scrubFill = null;
-        this._scrubKnob = null;
-        this._elapsedLabel = null;
-        this._remainingLabel = null;
-        this._titleLabel = null;
-        this._artistLabel = null;
-        this._playIcon = null;
-        this._eqBox = null;
+        this._resetMediaRefs();
+        this._stageActive = null;
+        this._stageMounted = false;
+        this._lastBusName = null;
         this._micBtn = null;
         this._volMuteIcon = null;
         this._volCanvas = null;

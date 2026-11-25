@@ -117,6 +117,7 @@ export class PowerProfileService extends Signals.EventEmitter {
         this._liveTimerId = 0;
         this._hwmonMap = null;
         this._hwmonPromise = null;
+        this._batDir = null;
         this._prevCpuSample = null;
 
         this._state = {
@@ -323,6 +324,29 @@ export class PowerProfileService extends Signals.EventEmitter {
         return this._hwmonPromise;
     }
 
+    _discoverBatteryDir() {
+        if (this._batDir)
+            return this._batDir;
+        try {
+            const dir = Gio.File.new_for_path('/sys/class/power_supply');
+            if (dir.query_exists(null)) {
+                const enumerator = dir.enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
+                let info;
+                while ((info = enumerator.next_file(null)) !== null) {
+                    const name = info.get_name();
+                    if (/^BAT\d+$/.test(name)) {
+                        enumerator.close(null);
+                        this._batDir = `/sys/class/power_supply/${name}`;
+                        return this._batDir;
+                    }
+                }
+                enumerator.close(null);
+            }
+        } catch {}
+        this._batDir = BAT0_DIR;
+        return this._batDir;
+    }
+
     async refreshTelemetryAsync() {
         if (!this._enabled)
             return;
@@ -339,9 +363,12 @@ export class PowerProfileService extends Signals.EventEmitter {
         if (!this._enabled || cancel.is_cancelled())
             return;
 
+        const batDir = this._discoverBatteryDir();
+        const cpuHwmon = hwmon.coretemp || hwmon.k10temp || hwmon.zenpower || hwmon.acpitz || hwmon.thinkpad || null;
+
         const [batValues, cpuRaw, nvmeRaw, tpRaw, fanRaw, procStatRaw, procMemRaw, procUptimeRaw, diskInfo] = await Promise.all([
-            Promise.all(batKeys.map(k => readTextAsync(`${BAT0_DIR}/${k}`, cancel))),
-            hwmon.coretemp ? readTextAsync(`${hwmon.coretemp}/temp1_input`, cancel) : null,
+            Promise.all(batKeys.map(k => readTextAsync(`${batDir}/${k}`, cancel))),
+            cpuHwmon ? readTextAsync(`${cpuHwmon}/temp1_input`, cancel) : null,
             hwmon.nvme ? readTextAsync(`${hwmon.nvme}/temp1_input`, cancel) : null,
             hwmon.thinkpad ? readTextAsync(`${hwmon.thinkpad}/temp1_input`, cancel) : null,
             hwmon.thinkpad ? readTextAsync(`${hwmon.thinkpad}/fan1_input`, cancel) : null,

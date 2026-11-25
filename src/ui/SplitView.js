@@ -2,14 +2,8 @@ import Clutter from 'gi://Clutter';
 import Pango from 'gi://Pango';
 import St from 'gi://St';
 
-import { buildEqualizerWidget } from './CompactView.js';
-
-function formatClock(sec) {
-    const s = Math.max(0, Math.floor(sec));
-    const m = Math.floor(s / 60);
-    const rem = s % 60;
-    return `${String(m).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
-}
+import { buildEqualizerWidget } from './components/EqualizerWidget.js';
+import { formatClock, sanitizeSingleLine } from '../utils/Formatters.js';
 
 /**
  * Renders SPLIT_PILL when 2 persistent tasks are active simultaneously
@@ -86,11 +80,13 @@ export class SplitView {
                 }),
             }));
             this._mediaLabel = new St.Label({
-                text: media.title || 'Media',
+                text: sanitizeSingleLine(media.title) || 'Media',
                 style_class: 'bayisland-compact-title',
                 x_expand: true,
                 y_align: Clutter.ActorAlign.CENTER,
             });
+            this._mediaLabel.clutter_text.single_line_mode = true;
+            this._mediaLabel.clutter_text.line_wrap = false;
             this._mediaLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
             leftBox.add_child(this._mediaLabel);
 
@@ -189,7 +185,7 @@ export class SplitView {
         if (this._timerLabel && model.persistent.timer?.active)
             this._timerLabel.text = formatClock(model.persistent.timer.remainingSec ?? 0);
         if (this._mediaLabel && model.persistent.media?.active)
-            this._mediaLabel.text = model.persistent.media.title || 'Media';
+            this._mediaLabel.text = sanitizeSingleLine(model.persistent.media.title) || 'Media';
         return true;
     }
 }

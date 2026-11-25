@@ -285,7 +285,13 @@ export class ResourceManager {
             this._netWasActive = true;
             const rxStr = this._formatRate(rxRate);
             const txStr = this._formatRate(txRate);
-            const summary = `↓ ${rxStr}  ↑ ${txStr}`;
+            let summary;
+            if (rxRate >= 25 * 1024 && txRate >= 25 * 1024)
+                summary = `↓ ${rxStr} ↑ ${txStr}`;
+            else if (txRate >= 25 * 1024)
+                summary = `↑ ${txStr}`;
+            else
+                summary = `↓ ${rxStr}`;
             this._priority.updateMeta({
                 netSpeed: {
                     active: true,
@@ -314,10 +320,14 @@ export class ResourceManager {
     _formatRate(bytesPerSec) {
         if (!bytesPerSec || bytesPerSec < 1024)
             return `${Math.round(bytesPerSec || 0)} B/s`;
-        if (bytesPerSec < 1024 * 1024)
+        if (bytesPerSec < 100 * 1024)
             return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
-        if (bytesPerSec < 1024 * 1024 * 1024)
+        if (bytesPerSec < 1024 * 1024)
+            return `${Math.round(bytesPerSec / 1024)} KB/s`;
+        if (bytesPerSec < 100 * 1024 * 1024)
             return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+        if (bytesPerSec < 1024 * 1024 * 1024)
+            return `${Math.round(bytesPerSec / (1024 * 1024))} MB/s`;
         return `${(bytesPerSec / (1024 * 1024 * 1024)).toFixed(2)} GB/s`;
     }
 

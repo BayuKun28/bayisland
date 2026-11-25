@@ -21,6 +21,7 @@ import { TimerManager } from './src/managers/TimerManager.js';
 import { NotificationManager } from './src/managers/NotificationManager.js';
 import { ResourceManager } from './src/managers/ResourceManager.js';
 import { ExternalBusService } from './src/managers/ExternalBusService.js';
+import { ScreencastManager } from './src/managers/ScreencastManager.js';
 import { TopBarManager } from './src/managers/TopBarManager.js';
 
 export default class BayIslandExtension extends Extension {
@@ -87,7 +88,15 @@ export default class BayIslandExtension extends Extension {
             notifications: this._notifications,
             dropShelf: this._dropShelf,
             compat: this._compat,
+            timers: this._timers,
+            islandProvider: () => this._island,
         });
+        this._screencast = new ScreencastManager({
+            signals: this._signals,
+            timers: this._timers,
+            priority: this._priority,
+        });
+        this._screencast.setEnabled(true);
 
         this._island = new IslandContainer({
             signals: this._signals,
@@ -153,6 +162,7 @@ export default class BayIslandExtension extends Extension {
                 onNotifDismiss: id => this._notifications?.dismissItem(id),
                 onNotifAction: (id, idx) => this._notifications?.invokeAction(id, idx),
                 onTasksCountChanged: count => this._priority?.updateMeta({ pendingTasksCount: count }, { inPlaceHint: true }),
+                onStopRecording: () => this._screencast?.stopRecording(),
             },
         });
 
@@ -172,39 +182,51 @@ export default class BayIslandExtension extends Extension {
             this._syncTopBarOptions(snapshot);
         });
 
-        this._signals.connect(this._topBar, 'clock-updated', (_src, clockData) => {
+        const handleClockUpdate = (_src, clockData) => {
             this._priority?.updateMeta(clockData, { inPlaceHint: true });
-        });
+        };
+        this._signals.connect(this._topBar, 'clock-updated', handleClockUpdate);
+        this._signals.connect(this._topBar, 'clock-changed', handleClockUpdate);
+
+        this._tearingDown = false;
 
         this._signals.connect(this._topBar, 'panel-state-changed', () => {
+            if (this._tearingDown) return;
             this._island?._onEnvironmentChanged();
         });
 
         this._signals.connect(this._powerProfile, 'changed', (_src, snapshot) => {
+            if (this._tearingDown) return;
             this._island?.setPowerProfileSnapshot(snapshot);
         });
 
         this._signals.connect(this._quickActions, 'changed', (_src, snapshot) => {
+            if (this._tearingDown) return;
             this._island?.setQuickActionsSnapshot(snapshot);
         });
 
         this._signals.connect(this._clipboard, 'changed', (_src, snapshot) => {
+            if (this._tearingDown) return;
             this._island?.setClipboardSnapshot(snapshot);
         });
 
         this._signals.connect(this._dropShelf, 'changed', (_src, snapshot) => {
+            if (this._tearingDown) return;
             this._island?.setShelfSnapshot(snapshot);
         });
 
         this._signals.connect(this._dropShelf, 'bridge-activity', (_src, activity) => {
+            if (this._tearingDown) return;
             this._island?.handleBridgeActivity(activity);
         });
 
         this._signals.connect(this._notifications, 'changed', (_src, history) => {
+            if (this._tearingDown) return;
             this._island?.setNotificationHistory(history);
         });
 
         this._signals.connect(this._settings, 'changed', () => {
+            if (this._tearingDown) return;
             this._applySettings();
         });
 
@@ -232,6 +254,14 @@ export default class BayIslandExtension extends Extension {
             Meta.KeyBindingFlags.IGNORE_AUTOREPEAT,
             mode,
             () => this._priority?.toggleExpand()
+        );
+
+        Main.wm.addKeybinding(
+            'quick-runner-shortcut',
+            this._settings,
+            Meta.KeyBindingFlags.IGNORE_AUTOREPEAT,
+            mode,
+            () => this._island?.openQuickRunner()
         );
 
         Main.wm.addKeybinding(
@@ -306,6 +336,7 @@ export default class BayIslandExtension extends Extension {
         const mergedPillPreset = s.get_string('merged-pill-preset');
         const mergedClockRightClickGnome = s.get_boolean('merged-clock-right-click-gnome');
         const topMargin = s.get_int('top-margin');
+        const expandedTopMargin = s.get_int('expanded-top-margin');
         const hideInFullscreen = s.get_boolean('hide-in-fullscreen');
         const showIdlePill = s.get_boolean('show-idle-pill');
         const idleHandleEnabled = s.get_boolean('idle-handle-enabled');
@@ -321,7 +352,9 @@ export default class BayIslandExtension extends Extension {
             topbarIntegrationMode,
             mergedClockRightClickGnome,
             topMargin,
+            expandedTopMargin,
             idleHoverDwellMs,
+            monitorMode: s.get_string('monitor-mode'),
         });
         this._priority.setOptions({
             showIdlePill,
@@ -379,12 +412,17 @@ export default class BayIslandExtension extends Extension {
         });
         this._dropShelf.setEnabled(s.get_boolean('enable-shelf'));
 
+        this._island?.setCommandRunnerEnabled(s.get_boolean('enable-command-runner'));
+
         this._bus.setEnabled(s.get_boolean('enable-dbus-service'));
     }
 
     disable() {
+        this._tearingDown = true;
+
         for (const key of [
             'toggle-expand-shortcut',
+            'quick-runner-shortcut',
             'quick-timer-shortcut',
             'quick-clipboard-shortcut',
             'quick-shelf-shortcut',
@@ -397,9 +435,8 @@ export default class BayIslandExtension extends Extension {
             }
         }
 
-        this._signals?.disconnectAll();
-
         this._bus?.destroy();
+        this._screencast?.destroy();
         this._clipboard?.destroy();
         this._dropShelf?.destroy();
         this._quickActions?.destroy();
@@ -415,9 +452,12 @@ export default class BayIslandExtension extends Extension {
         this._topBar?.destroy();
         this._themeBridge?.destroy();
         this._priority?.destroy();
+
+        this._signals?.disconnectAll();
         this._timers?.clearAll();
 
         this._bus = null;
+        this._screencast = null;
         this._clipboard = null;
         this._dropShelf = null;
         this._quickActions = null;

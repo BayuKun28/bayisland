@@ -91,7 +91,8 @@ export class CommandRunnerManager {
         this._cancellable = new Gio.Cancellable();
 
         // 5-second safety timeout
-        const timeoutSourceId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
+        let timeoutSourceId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
+            timeoutSourceId = 0;
             if (this._cancellable) {
                 this._cancellable.cancel();
             }
@@ -105,7 +106,10 @@ export class CommandRunnerManager {
             );
 
             proc.communicate_utf8_async(null, this._cancellable, (_proc, res) => {
-                GLib.source_remove(timeoutSourceId);
+                if (timeoutSourceId) {
+                    GLib.source_remove(timeoutSourceId);
+                    timeoutSourceId = 0;
+                }
                 const endMono = GLib.get_monotonic_time();
                 const durationMs = Math.round((endMono - startMono) / 1000);
 
@@ -132,7 +136,10 @@ export class CommandRunnerManager {
                 }
             });
         } catch (e) {
-            GLib.source_remove(timeoutSourceId);
+            if (timeoutSourceId) {
+                GLib.source_remove(timeoutSourceId);
+                timeoutSourceId = 0;
+            }
             const durationMs = Math.round((GLib.get_monotonic_time() - startMono) / 1000);
             callback?.({
                 ok: false,

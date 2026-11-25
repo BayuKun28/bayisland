@@ -32,6 +32,7 @@ export class ExpandedView {
         this._currentTabId = null;
         this._activeTabInstance = null;
         this._lastPalette = null;
+        this._tabNodes = new Map();
 
         this._stripClockLabel = null;
         this._lowBatBtn = null;
@@ -40,7 +41,9 @@ export class ExpandedView {
         this._tabBadges = {};
 
         // Quick Runner
+        this._runnerEnabled = true;
         this._runner = new CommandRunnerManager();
+        this._runnerBar = null;
         this._runnerEntry = null;
         this._runnerResultChip = null;
         this._runnerResultLabel = null;
@@ -48,6 +51,8 @@ export class ExpandedView {
         this._runnerClearBtn = null;
         this._runnerOutputDrawer = null;
         this._lastMathResult = null;
+        this._runnerHistory = [];
+        this._runnerHistIdx = -1;
 
         this._homeTab = new HomeTab({ callbacks, timers });
         this._powerTab = new PowerTab({ callbacks });
@@ -86,14 +91,83 @@ export class ExpandedView {
             break;
         }
 
+        if (!this._runnerEnabled)
+            targetH = Math.max(260, targetH - 38);
+        else if (this._runnerOutputDrawer?.visible)
+            targetH += Math.max(76, Math.round(this._runnerOutputDrawer.height || 100)) + 10;
+
         return {
             width,
             height: Math.min(maxH, targetH),
         };
     }
 
+    setCommandRunnerEnabled(enabled) {
+        const next = Boolean(enabled);
+        if (this._runnerEnabled === next)
+            return;
+        this._runnerEnabled = next;
+        if (this._runnerBar)
+            this._runnerBar.visible = next;
+        if (!next && this._runnerOutputDrawer)
+            this._runnerOutputDrawer.visible = false;
+    }
+
+    focusRunner() {
+        if (!this._runnerEnabled || !this._runnerEntry || !this._runnerBar?.visible)
+            return false;
+        try {
+            this._cb.onAcquireTextModal?.(this._runnerEntry);
+            this._runnerEntry.grab_key_focus?.();
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    isRunnerFocused() {
+        return Boolean(this._runnerEntry?.clutter_text?.has_focus);
+    }
+
+    hasRoot() {
+        return Boolean(this._root);
+    }
+
+    getRoot() {
+        return this._root;
+    }
+
+    activate(model, palette, snapshots) {
+        if (!this._root)
+            return this.render(model, palette, snapshots);
+
+        if (palette)
+            this._lastPalette = palette;
+        const pal = palette ?? this._lastPalette;
+        const snaps = snapshots ?? {};
+
+        const tab = model.tab || 'home';
+        if (this._currentTabId !== tab) {
+            this.switchTab(tab, model, pal, snaps);
+        } else {
+            this._mountActiveTab(tab, model, pal, snaps);
+            this.updateInPlace(model, snaps);
+        }
+
+        return this._root;
+    }
+
     render(model, palette, snapshots) {
-        this.destroyCurrentTab();
+        if (this._root) {
+            try { this._root.destroy(); } catch {}
+            this._root = null;
+        }
+        for (const [tabId, node] of this._tabNodes) {
+            try { node.destroy(); } catch {}
+        }
+        this._tabNodes.clear();
+        this._activeTabInstance = null;
+        this._currentTabId = null;
 
         const tab = model.tab || 'home';
         this._currentTabId = tab;
@@ -114,6 +188,7 @@ export class ExpandedView {
             x_expand: true,
             y_expand: true,
         });
+        root._keepAlive = true;
 
         // 1. Streamlined 36px Unified Header Bar (keeps Shelf bridge headerOffset = 60)
         const headerBar = new St.BoxLayout({
@@ -277,7 +352,9 @@ export class ExpandedView {
             x_expand: true,
             height: 32,
             y_align: Clutter.ActorAlign.CENTER,
+            visible: Boolean(this._runnerEnabled),
         });
+        this._runnerBar = runnerBar;
 
         runnerBar.add_child(new St.Icon({
             icon_name: 'utilities-terminal-symbolic',
@@ -339,16 +416,43 @@ export class ExpandedView {
             y_align: Clutter.ActorAlign.CENTER,
         });
 
+        const pushHistory = entry => {
+            if (!entry)
+                return;
+            if (this._runnerHistory[0] !== entry) {
+                this._runnerHistory.unshift(entry);
+                if (this._runnerHistory.length > 20)
+                    this._runnerHistory.length = 20;
+            }
+            this._runnerHistIdx = -1;
+        };
+
         const executeCurrentCommand = () => {
             const text = (this._runnerEntry?.get_text() || '').trim();
             if (!text)
                 return;
+
+            const timerMatch = text.match(/^timer\s+(\d+(?:\.\d+)?)\s*([smh])?(?:\s+(.+))?$/i);
+            if (timerMatch) {
+                const num = Number.parseFloat(timerMatch[1]);
+                const unit = (timerMatch[2] || 'm').toLowerCase();
+                const mult = unit === 'h' ? 3600 : (unit === 's' ? 1 : 60);
+                const secs = Math.max(1, Math.round(num * mult));
+                const label = (timerMatch[3] || '').trim() || `${timerMatch[1]}${unit}`;
+                pushHistory(text);
+                this._cb.onTimerStart?.(secs, 'countdown', label);
+                this._runnerEntry.set_text('');
+                this._runnerResultLabel.text = `Timer ${label} started`;
+                this._runnerResultChip.visible = true;
+                return;
+            }
 
             if (text.startsWith('>') || text.startsWith(':') || text.startsWith('!')) {
                 const cmd = text.replace(/^[>:!]\s*/, '');
                 if (!cmd)
                     return;
 
+                pushHistory(text);
                 this._runnerExecBtn.label = 'Running…';
                 this._runnerExecBtn.reactive = false;
 
@@ -362,6 +466,7 @@ export class ExpandedView {
             } else {
                 const math = this._runner.evaluateMath(text);
                 if (math.ok) {
+                    pushHistory(text);
                     this._lastMathResult = math.result;
                     copyMathResult();
                 }
@@ -385,8 +490,12 @@ export class ExpandedView {
             this._runnerResultChip.visible = false;
             this._runnerExecBtn.visible = false;
             this._lastMathResult = null;
-            if (this._runnerOutputDrawer)
+            if (this._runnerOutputDrawer) {
+                const wasVisible = this._runnerOutputDrawer.visible;
                 this._runnerOutputDrawer.visible = false;
+                if (wasVisible)
+                    this._cb.onRunnerLayoutChanged?.();
+            }
         });
 
         this._runnerEntry.clutter_text.connect('text-changed', () => {
@@ -421,6 +530,16 @@ export class ExpandedView {
 
         this._runnerEntry.clutter_text.connect('key-press-event', (_actor, event) => {
             const sym = event.get_key_symbol();
+            if (sym === Clutter.KEY_Up && this._runnerHistory.length > 0) {
+                this._runnerHistIdx = Math.min(this._runnerHistory.length - 1, this._runnerHistIdx + 1);
+                this._runnerEntry.set_text(this._runnerHistory[this._runnerHistIdx]);
+                return Clutter.EVENT_STOP;
+            }
+            if (sym === Clutter.KEY_Down && this._runnerHistory.length > 0) {
+                this._runnerHistIdx = Math.max(-1, this._runnerHistIdx - 1);
+                this._runnerEntry.set_text(this._runnerHistIdx === -1 ? '' : this._runnerHistory[this._runnerHistIdx]);
+                return Clutter.EVENT_STOP;
+            }
             if (sym === Clutter.KEY_Return || sym === Clutter.KEY_KP_Enter) {
                 executeCurrentCommand();
                 return Clutter.EVENT_STOP;
@@ -465,11 +584,17 @@ export class ExpandedView {
         this._root = root;
         root.connect('destroy', () => {
             if (this._root === root) {
+                for (const [tabId, node] of this._tabNodes) {
+                    try { node.destroy(); } catch {}
+                }
+                this._tabNodes.clear();
+                this._activeTabInstance = null;
                 this._root = null;
                 this._bodyBin = null;
                 this._stripClockLabel = null;
                 this._lowBatBtn = null;
                 this._incogBadge = null;
+                this._runnerBar = null;
                 this._runnerEntry = null;
                 this._runnerResultChip = null;
                 this._runnerResultLabel = null;
@@ -488,31 +613,83 @@ export class ExpandedView {
         return this._currentTabId;
     }
 
-    _mountActiveTab(tab, model, palette, snaps) {
-        let child = null;
+    _getTabInstance(tab) {
+        switch (tab) {
+        case 'power': return this._powerTab;
+        case 'media': return this._mediaTab;
+        case 'clipboard': return this._clipboardTab;
+        case 'shelf': return this._shelfTab;
+        case 'home':
+        default: return this._homeTab;
+        }
+    }
+
+    _updateCachedTab(tab, model, palette, snaps) {
         switch (tab) {
         case 'power':
-            this._activeTabInstance = this._powerTab;
-            child = this._powerTab.render(model, palette, snaps.power, snaps.powerProfile);
+            this._powerTab.updateSnapshot?.(model, palette, snaps.power, snaps.powerProfile);
             break;
         case 'media':
-            this._activeTabInstance = this._mediaTab;
-            child = this._mediaTab.render(model, palette, snaps.quickActions);
+            if (snaps.quickActions)
+                this._mediaTab.updateQuickActions(snaps.quickActions, palette);
+            this._mediaTab.updateInPlace?.(model, palette);
             break;
         case 'clipboard':
-            this._activeTabInstance = this._clipboardTab;
-            child = this._clipboardTab.render(model, palette, snaps.clipboard);
+            if (snaps.clipboard)
+                this._clipboardTab.updateSnapshot(snaps.clipboard, palette);
             break;
         case 'shelf':
-            this._activeTabInstance = this._shelfTab;
-            child = this._shelfTab.render(model, palette, snaps.shelf);
             break;
         case 'home':
         default:
-            this._activeTabInstance = this._homeTab;
-            child = this._homeTab.render(model, palette, snaps.quickActions, snaps.notifHistory);
+            if (snaps.quickActions)
+                this._homeTab.updateQuickActions(snaps.quickActions, palette);
+            if (snaps.notifHistory)
+                this._homeTab.updateHistory(snaps.notifHistory, palette);
+            this._homeTab.updateInPlace?.(model, palette);
             break;
         }
+    }
+
+    _setTabNode(tab, child) {
+        const prev = this._tabNodes.get(tab);
+        if (prev && prev !== child) {
+            try { prev.destroy(); } catch {}
+        }
+        if (child)
+            this._tabNodes.set(tab, child);
+        else
+            this._tabNodes.delete(tab);
+    }
+
+    _mountActiveTab(tab, model, palette, snaps) {
+        this._activeTabInstance = this._getTabInstance(tab);
+
+        let child = this._tabNodes.get(tab);
+        if (!child || tab === 'shelf') {
+            switch (tab) {
+            case 'power':
+                child = this._powerTab.render(model, palette, snaps.power, snaps.powerProfile);
+                break;
+            case 'media':
+                child = this._mediaTab.render(model, palette, snaps.quickActions);
+                break;
+            case 'clipboard':
+                child = this._clipboardTab.render(model, palette, snaps.clipboard);
+                break;
+            case 'shelf':
+                child = this._shelfTab.render(model, palette, snaps.shelf);
+                break;
+            case 'home':
+            default:
+                child = this._homeTab.render(model, palette, snaps.quickActions, snaps.notifHistory);
+                break;
+            }
+            this._setTabNode(tab, child);
+        } else {
+            this._updateCachedTab(tab, model, palette, snaps);
+        }
+
         this._bodyBin?.set_child(child);
     }
 
@@ -587,13 +764,8 @@ export class ExpandedView {
             } catch {}
         }
 
-        // 2. Destroy old tab instance safely
-        if (this._activeTabInstance) {
-            try {
-                this._activeTabInstance.destroy();
-            } catch {}
-            this._activeTabInstance = null;
-        }
+        // 2. Clear active tab pointer (keep cached instances alive for instant reuse)
+        this._activeTabInstance = null;
 
         // 3. Mount new tab with smooth, consistent unified slide-in
         const snaps = snapshots ?? {};
@@ -639,7 +811,7 @@ export class ExpandedView {
         this._updateStripPowerAndBadges(model.meta, snaps);
 
         if (this._activeTabInstance?.updateInPlace)
-            this._activeTabInstance.updateInPlace(model);
+            this._activeTabInstance.updateInPlace(model, this._lastPalette);
 
         return true;
     }
@@ -674,6 +846,7 @@ export class ExpandedView {
             if (this._powerTab.updateSnapshot?.(model, pal, snaps.power, snaps.powerProfile))
                 return;
             const child = this._powerTab.render(model, pal, snaps.power, snaps.powerProfile);
+            this._setTabNode('power', child);
             this._bodyBin.set_child(child);
         }
     }
@@ -701,6 +874,7 @@ export class ExpandedView {
         this._updateStripPowerAndBadges(model.meta, { shelf: shelfSnap });
         if (this._currentTabId === 'shelf' && this._bodyBin) {
             const child = this._shelfTab.render(model, palette ?? this._lastPalette, shelfSnap);
+            this._setTabNode('shelf', child);
             this._bodyBin.set_child(child);
         }
     }
@@ -712,7 +886,12 @@ export class ExpandedView {
     }
 
     getShelfBridgeRegion(shellX, shellY, shellW, shellH) {
-        return this._shelfTab.getBridgeRegion(shellX, shellY, shellW, shellH);
+        let headerOffset = 60;
+        if (this._runnerEnabled)
+            headerOffset += 42;
+        if (this._runnerEnabled && this._runnerOutputDrawer?.visible)
+            headerOffset += Math.max(76, Math.round(this._runnerOutputDrawer.height || 100)) + 10;
+        return this._shelfTab.getBridgeRegion(shellX, shellY, shellW, shellH, headerOffset);
     }
 
     destroyCurrentTab() {
@@ -769,13 +948,16 @@ export class ExpandedView {
             can_focus: false,
             y_align: Clutter.ActorAlign.CENTER,
         });
+        let copyBtnAlive = true;
+        copyBtn.connect('destroy', () => { copyBtnAlive = false; });
         copyBtn.connect('clicked', () => {
             const out = (res.stdout || res.stderr || '').trim();
             if (out) {
                 St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, out);
                 copyBtn.label = 'Copied!';
                 this._timers.setTimeout(() => {
-                    if (copyBtn) copyBtn.label = 'Copy';
+                    if (copyBtnAlive && copyBtn.get_stage?.())
+                        copyBtn.label = 'Copy';
                 }, 1000);
             }
         });
@@ -789,8 +971,12 @@ export class ExpandedView {
             y_align: Clutter.ActorAlign.CENTER,
         });
         closeBtn.connect('clicked', () => {
-            if (this._runnerOutputDrawer)
+            if (this._runnerOutputDrawer) {
+                const wasVisible = this._runnerOutputDrawer.visible;
                 this._runnerOutputDrawer.visible = false;
+                if (wasVisible)
+                    this._cb.onRunnerLayoutChanged?.();
+            }
         });
         header.add_child(closeBtn);
 
@@ -815,15 +1001,25 @@ export class ExpandedView {
         scroll.set_child(outLabel);
         this._runnerOutputDrawer.add_child(scroll);
         this._runnerOutputDrawer.visible = true;
+        this._cb.onRunnerLayoutChanged?.();
     }
 
     destroy() {
+        for (const [tabId, node] of this._tabNodes) {
+            try { node.destroy(); } catch {}
+        }
+        this._tabNodes.clear();
+        this._activeTabInstance = null;
         this.destroyCurrentTab();
         if (this._runner) {
             this._runner.destroy();
             this._runner = null;
         }
         try { this._homeTab?.disposePermanent?.(); } catch {}
+        try { this._powerTab?.destroy?.(); } catch {}
+        try { this._mediaTab?.destroy?.(); } catch {}
+        try { this._clipboardTab?.destroy?.(); } catch {}
+        try { this._shelfTab?.destroy?.(); } catch {}
         this._homeTab = null;
         this._powerTab = null;
         this._mediaTab = null;
@@ -834,6 +1030,7 @@ export class ExpandedView {
         this._stripClockLabel = null;
         this._lowBatBtn = null;
         this._incogBadge = null;
+        this._runnerBar = null;
         this._runnerEntry = null;
         this._runnerResultChip = null;
         this._runnerResultLabel = null;
@@ -841,6 +1038,9 @@ export class ExpandedView {
         this._runnerClearBtn = null;
         this._runnerOutputDrawer = null;
         this._bodyBin = null;
-        this._root = null;
+        if (this._root) {
+            try { this._root.destroy(); } catch {}
+            this._root = null;
+        }
     }
 }

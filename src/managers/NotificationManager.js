@@ -259,13 +259,16 @@ export class NotificationManager extends Signals.EventEmitter {
     _presentNotification(notification) {
         this._clearActiveNotif();
         this._activeNotif = notification;
+        let isNotifDisposed = false;
 
         const actions = (notification.actions ?? []).slice(0, 2).map(act => ({
             label: act.label,
             primary: false,
             callback: () => {
+                if (isNotifDisposed)
+                    return;
                 try {
-                    act.activate();
+                    act.activate?.();
                 } catch {
                     // Ignore
                 }
@@ -275,8 +278,10 @@ export class NotificationManager extends Signals.EventEmitter {
         actions.push({
             label: 'Clear',
             callback: () => {
+                if (isNotifDisposed)
+                    return;
                 try {
-                    notification.destroy(MessageTray.NotificationDestroyedReason.DISMISSED);
+                    notification.destroy?.(MessageTray.NotificationDestroyedReason?.DISMISSED ?? 2);
                 } catch {
                     // Ignore
                 }
@@ -303,13 +308,17 @@ export class NotificationManager extends Signals.EventEmitter {
             durationMs: isCritical ? Math.max(6000, readWindowMs) : readWindowMs,
             actions,
             onActivate: () => {
+                if (isNotifDisposed)
+                    return;
                 try {
-                    notification.activate();
+                    if (notification && !notification.is_finalized?.())
+                        notification.activate?.();
                 } catch {
                     // Ignore
                 }
             },
             onDismiss: () => {
+                isNotifDisposed = true;
                 this._clearActiveNotif();
                 if (this._enabled && Main.messageTray?.queueCount > 0 && !this._nextQueueTimerId) {
                     this._nextQueueTimerId = this._timers.setTimeout(180, () => {
@@ -323,6 +332,7 @@ export class NotificationManager extends Signals.EventEmitter {
 
         if (transientId !== null) {
             this._activeDestroyId = notification.connect('destroy', () => {
+                isNotifDisposed = true;
                 this._activeDestroyId = 0;
                 this._activeNotif = null;
                 this._priority.dismissTransient(transientId);

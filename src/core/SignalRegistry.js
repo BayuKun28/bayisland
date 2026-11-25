@@ -49,6 +49,30 @@ export class SignalRegistry {
         return id;
     }
 
+    disconnect(idOrEntry) {
+        if (!idOrEntry)
+            return;
+        const index = this._signals.findIndex(e =>
+            e === idOrEntry || e.id === idOrEntry || (typeof idOrEntry === 'object' && e.id === idOrEntry.id)
+        );
+        if (index === -1)
+            return;
+        const [entry] = this._signals.splice(index, 1);
+        if (entry.obj) {
+            try {
+                if (entry.destroyId)
+                    entry.obj.disconnect(entry.destroyId);
+                if (entry.id)
+                    entry.obj.disconnect(entry.id);
+            } catch {
+                // Object already disposed
+            }
+            entry.obj = null;
+            entry.id = 0;
+            entry.destroyId = 0;
+        }
+    }
+
     disconnectAll() {
         for (const entry of this._signals) {
             if (!entry.obj)

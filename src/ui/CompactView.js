@@ -6,74 +6,27 @@ import St from 'gi://St';
 
 import { IslandState } from '../core/PriorityManager.js';
 import { createRingGauge } from './RingGauge.js';
+import {
+    formatClock,
+    getPeekDateString,
+    getPeekClockString,
+    getProfileIconName,
+    sanitizeSingleLine,
+} from '../utils/Formatters.js';
+import { buildEqualizerWidget } from './components/EqualizerWidget.js';
 
-const EN_DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const EN_MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-function formatClock(sec) {
-    const s = Math.max(0, Math.floor(sec));
-    const m = Math.floor(s / 60);
-    const rem = s % 60;
-    return `${String(m).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
-}
-
-function getPeekDateString() {
-    const now = GLib.DateTime.new_now_local();
-    const dow = now.get_day_of_week() % 7;
-    const monthIdx = Math.max(0, Math.min(11, now.get_month() - 1));
-    return `${EN_DAYS_SHORT[dow]} ${now.get_day_of_month()} ${EN_MONTHS_SHORT[monthIdx]}`;
-}
-
-function getPeekClockString() {
-    const now = GLib.DateTime.new_now_local();
-    let use24h = true;
-    try {
-        const src = Gio.SettingsSchemaSource.get_default();
-        const schema = src?.lookup('org.gnome.desktop.interface', true);
-        if (schema) {
-            const gs = new Gio.Settings({ settings_schema: schema });
-            use24h = gs.get_string('clock-format') !== '12h';
-        }
-    } catch {
-        use24h = true;
-    }
-    return (use24h ? now.format('%H:%M') : now.format('%I:%M %p')) || '00:00';
-}
-
-function getProfileIconName(profile) {
-    if (profile === 'power-saver')
-        return 'power-profile-power-saver-symbolic';
-    if (profile === 'performance')
-        return 'power-profile-performance-symbolic';
-    return 'power-profile-balanced-symbolic';
-}
-
-export function buildEqualizerWidget(barCount = 4, accentCss = '#93c5fd') {
-    const eqBox = new St.BoxLayout({
-        style_class: 'bayisland-eq-box',
-        y_align: Clutter.ActorAlign.CENTER,
-    });
-    const bars = [];
-    for (let i = 0; i < barCount; i++) {
-        const bar = new St.Widget({
-            style_class: 'bayisland-eq-bar',
-            style: `background-color: ${accentCss};`,
-            y_align: Clutter.ActorAlign.END,
-        });
-        eqBox.add_child(bar);
-        bars.push(bar);
-    }
-    return { eqBox, bars };
-}
+export { buildEqualizerWidget };
 
 /**
  * Builds and updates IDLE_BAR, INTEGRATED_CLOCK, HOVER_PEEK, DROP_CATCH, AMBIENT_DOT, and COMPACT_PILL layouts.
  */
 export class CompactView {
-    constructor({ onExpand, onMediaToggle, onToggleMinimizePersistent }) {
+    constructor({ onExpand, onMediaToggle, onToggleMinimizePersistent, onTaskClick, onStopRecording }) {
         this._onExpand = onExpand;
         this._onMediaToggle = onMediaToggle;
         this._onToggleMinimizePersistent = onToggleMinimizePersistent;
+        this._onTaskClick = onTaskClick;
+        this._onStopRecording = onStopRecording;
         this._root = null;
         this._currentPrimary = null;
 
@@ -96,6 +49,9 @@ export class CompactView {
 
         this._titleLabel = null;
         this._timerLabel = null;
+        this._recTimerLabel = null;
+        this._taskCmdLabel = null;
+        this._taskTimerLabel = null;
         this._eqBars = [];
 
         this._idleUnreadDot = null;
@@ -148,8 +104,12 @@ export class CompactView {
             return this._renderIdle();
         if (primary === 'privacy')
             return this._renderPrivacy(model.persistent.privacy);
+        if (primary === 'recording')
+            return this._renderRecording(model.persistent.recording, palette);
         if (primary === 'timer')
             return this._renderTimer(model.persistent.timer);
+        if (primary === 'task')
+            return this._renderTask(model.persistent.task, palette, model);
         return this._renderMedia(model.persistent.media, palette, model);
     }
 
@@ -199,12 +159,23 @@ export class CompactView {
             this._peekTaskBadgeLabel.text = String(pending);
         }
 
-        if (this._netSpeedLabel && meta.netSpeed?.summary)
-            this._netSpeedLabel.text = meta.netSpeed.summary;
+        if (this._netSpeedLabel) {
+            this._netSpeedLabel.visible = Boolean(meta.netSpeed?.active);
+            if (meta.netSpeed?.summary)
+                this._netSpeedLabel.text = meta.netSpeed.summary;
+        }
+        if (this._peekProfileIcon)
+            this._peekProfileIcon.visible = !meta.netSpeed?.active;
 
         if (this._mediaNetLabel && meta.netSpeed?.summary)
             this._mediaNetLabel.text = meta.netSpeed.summary;
 
+        if (this._peekBadge)
+            this._peekBadge.visible = unread > 0;
+        if (this._peekDndIcon)
+            this._peekDndIcon.visible = wantDndOnly;
+        if (this._peekTaskBadge)
+            this._peekTaskBadge.visible = (meta.pendingTasksCount ?? 0) > 0;
         if (this._integratedDot)
             this._integratedDot.visible = unread > 0;
 
@@ -240,28 +211,9 @@ export class CompactView {
                 (hasMic && micMuted !== this._integratedMicMuted))
                 return false;
 
-            const meta = model.meta ?? {};
-            const unread = meta.unreadNotifs ?? 0;
-            const wantDndOnly = unread === 0 && Boolean(meta.dnd);
-
-            if (wantFull) {
-                if ((unread > 0) !== Boolean(this._peekBadge))
-                    return false;
-                if (((meta.pendingTasksCount ?? 0) > 0) !== Boolean(this._peekTaskBadge))
-                    return false;
-                if (Boolean(meta.netSpeed?.active) !== Boolean(this._netSpeedLabel))
-                    return false;
-                if (wantDndOnly !== Boolean(this._peekDndIcon))
-                    return false;
-            } else {
-                if ((unread > 0) !== this._integratedHadUnread)
-                    return false;
-                if (wantDndOnly !== Boolean(this._peekDndIcon))
-                    return false;
-                if (heightChanged && this._root) {
-                    this._root.height = this._integratedHeight;
-                    this._renderedHeight = this._integratedHeight;
-                }
+            if (heightChanged && !wantFull && this._root) {
+                this._root.height = this._integratedHeight;
+                this._renderedHeight = this._integratedHeight;
             }
 
             this._syncStatusBadgesAndClock(model, { useCompactBattery: true });
@@ -312,7 +264,7 @@ export class CompactView {
         }
         if (model.primary === 'media' && this._currentPrimary === 'media' && this._titleLabel) {
             const m = model.persistent.media;
-            this._titleLabel.text = m.title || 'Media';
+            this._titleLabel.text = sanitizeSingleLine(m.title) || 'Media';
             if (this._mediaClockLabel)
                 this._mediaClockLabel.text = model.meta?.clockText || getPeekClockString();
             if (this._progressFill && this._progressTrack && m.lengthUs > 0) {
@@ -320,6 +272,20 @@ export class CompactView {
                 const trackW = this._progressTrack.width || 200;
                 this._progressFill.width = Math.max(2, Math.round(trackW * ratio));
             }
+            return true;
+        }
+        if (model.primary === 'recording' && this._currentPrimary === 'recording') {
+            const rec = model.persistent?.recording;
+            if (this._recTimerLabel && rec)
+                this._recTimerLabel.text = formatClock(rec.elapsedSec ?? 0);
+            return true;
+        }
+        if (model.primary === 'task' && this._currentPrimary === 'task') {
+            const task = model.persistent?.task;
+            if (this._taskTimerLabel && task)
+                this._taskTimerLabel.text = formatClock(task.elapsedSec ?? 0);
+            if (this._taskCmdLabel && task?.shortCmd)
+                this._taskCmdLabel.text = task.shortCmd;
             return true;
         }
         return false;
@@ -376,7 +342,8 @@ export class CompactView {
             if (full) {
                 const batBase = showBatText ? (showDate ? 278 : 230) : (showDate ? 238 : 190);
                 const statusExtra = (unread > 0 ? 32 : (dnd ? 18 : 0)) + (hasCam ? 10 : 0) + (hasMic ? 10 : 0);
-                w = batBase + statusExtra + extraDatePx + extraClockPx;
+                const netExtra = meta.netSpeed?.active ? 46 : 0;
+                w = batBase + statusExtra + netExtra + extraDatePx + extraClockPx;
             } else {
                 const dotExtra = ((unread > 0 || dnd) ? 14 : 0) + (hasCam ? 10 : 0) + (hasMic ? 10 : 0);
                 const idleBase = showDate
@@ -396,7 +363,8 @@ export class CompactView {
             const clockStr = meta.clockText || getPeekClockString();
             const extraClockPx = Math.max(0, clockStr.length - 5) * 6;
             const h = this._edgeFlush ? (40 + this._idleTopPad) : 40;
-            const w = (unread > 0 ? 336 : (dnd ? 318 : 306)) + extraClockPx;
+            const netExtra = meta.netSpeed?.active ? 46 : 0;
+            const w = (unread > 0 ? 336 : (dnd ? 318 : 306)) + extraClockPx + netExtra;
             return { width: w, height: h };
         }
         if (model.state === IslandState.DROP_CATCH)
@@ -410,8 +378,16 @@ export class CompactView {
             const dual = p.camera && p.mic;
             return { width: dual ? 136 : 112, height: slotH ? Math.min(30, slotH) : 30 };
         }
+        if (model.primary === 'recording')
+            return { width: 200, height: slotH ? Math.min(34, slotH) : 36 };
         if (model.primary === 'timer')
             return { width: 142, height: slotH ? Math.min(34, slotH) : 36 };
+        if (model.primary === 'task') {
+            const cmd = model.persistent?.task?.shortCmd || 'Task';
+            const extraPx = Math.max(0, cmd.length - 8) * 7;
+            const w = Math.min(270, 160 + extraPx);
+            return { width: w, height: slotH ? Math.min(34, slotH) : 36 };
+        }
         const clockPos = model?.mediaIslandClock || 'none';
         const hasClock = clockPos === 'left' || clockPos === 'right';
         const mediaW = hasClock ? 276 : 236;
@@ -440,6 +416,9 @@ export class CompactView {
         this._titleLabel = null;
         this._mediaClockLabel = null;
         this._timerLabel = null;
+        this._recTimerLabel = null;
+        this._taskCmdLabel = null;
+        this._taskTimerLabel = null;
         this._idleUnreadDot = null;
         this._peekDateLabel = null;
         this._peekDateSep = null;
@@ -623,70 +602,72 @@ export class CompactView {
                 y_align: Clutter.ActorAlign.CENTER,
             });
             this._appendPrivacyDots(statusChip, priv);
+
+            // Pre-mount status chips so in-place updates toggle visibility without blinking
+            this._netSpeedLabel = new St.Label({
+                text: meta.netSpeed?.summary || '',
+                style_class: 'bayisland-net-speed-label',
+                y_align: Clutter.ActorAlign.CENTER,
+                visible: Boolean(meta.netSpeed?.active),
+            });
+            statusChip.add_child(this._netSpeedLabel);
+
             this._peekProfileIcon = new St.Icon({
                 icon_name: getProfileIconName(meta.powerProfile),
                 icon_size: 12,
                 style: `color: ${palette?.accentOnDarkCss ?? palette?.accentCss ?? '#93c5fd'};`,
                 y_align: Clutter.ActorAlign.CENTER,
+                visible: !meta.netSpeed?.active,
             });
             statusChip.add_child(this._peekProfileIcon);
 
-            if (unread > 0) {
-                const acc = palette?.accentCss || '#93c5fd';
-                const fg = palette?.accentFgCss || '#090d16';
-                this._peekBadge = new St.BoxLayout({
-                    style_class: 'bayisland-peek-badge',
-                    y_align: Clutter.ActorAlign.CENTER,
-                    style: `spacing: 3px; background-color: ${acc}; color: ${fg};`,
-                });
-                this._peekBadge.add_child(new St.Icon({
-                    icon_name: meta.dnd ? 'notifications-disabled-symbolic' : 'preferences-system-notifications-symbolic',
-                    icon_size: 10,
-                    style: `color: ${fg};`,
-                }));
-                this._peekBadgeLabel = new St.Label({
-                    text: String(unread),
-                    style: `color: ${fg}; font-weight: 700;`,
-                });
-                this._peekBadge.add_child(this._peekBadgeLabel);
-                statusChip.add_child(this._peekBadge);
-            } else if (meta.dnd) {
-                this._peekDndIcon = new St.Icon({
-                    icon_name: 'notifications-disabled-symbolic',
-                    icon_size: 12,
-                    style: 'color: #fbbf24;',
-                    y_align: Clutter.ActorAlign.CENTER,
-                });
-                statusChip.add_child(this._peekDndIcon);
-            }
+            const acc = palette?.accentCss || '#93c5fd';
+            const fg = palette?.accentFgCss || '#090d16';
+            this._peekBadge = new St.BoxLayout({
+                style_class: 'bayisland-peek-badge',
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `spacing: 3px; background-color: ${acc}; color: ${fg};`,
+                visible: unread > 0,
+            });
+            this._peekBadge.add_child(new St.Icon({
+                icon_name: meta.dnd ? 'notifications-disabled-symbolic' : 'preferences-system-notifications-symbolic',
+                icon_size: 10,
+                style: `color: ${fg};`,
+            }));
+            this._peekBadgeLabel = new St.Label({
+                text: unread > 0 ? String(unread) : '0',
+                style: `color: ${fg}; font-weight: 700;`,
+            });
+            this._peekBadge.add_child(this._peekBadgeLabel);
+            statusChip.add_child(this._peekBadge);
+
+            this._peekDndIcon = new St.Icon({
+                icon_name: 'notifications-disabled-symbolic',
+                icon_size: 12,
+                style: 'color: #fbbf24;',
+                y_align: Clutter.ActorAlign.CENTER,
+                visible: unread === 0 && Boolean(meta.dnd),
+            });
+            statusChip.add_child(this._peekDndIcon);
 
             const pendingTasks = meta.pendingTasksCount ?? 0;
-            if (pendingTasks > 0) {
-                this._peekTaskBadge = new St.BoxLayout({
-                    style_class: 'bayisland-peek-badge bayisland-peek-task-badge',
-                    y_align: Clutter.ActorAlign.CENTER,
-                });
-                this._peekTaskBadge.add_child(new St.Icon({
-                    icon_name: 'view-list-bullet-symbolic',
-                    icon_size: 10,
-                    style: 'color: #38bdf8;',
-                }));
-                this._peekTaskBadgeLabel = new St.Label({
-                    text: String(pendingTasks),
-                    style: 'color: #38bdf8; font-weight: 700;',
-                });
-                this._peekTaskBadge.add_child(this._peekTaskBadgeLabel);
-                statusChip.add_child(this._peekTaskBadge);
-            }
+            this._peekTaskBadge = new St.BoxLayout({
+                style_class: 'bayisland-peek-badge bayisland-peek-task-badge',
+                y_align: Clutter.ActorAlign.CENTER,
+                visible: pendingTasks > 0,
+            });
+            this._peekTaskBadge.add_child(new St.Icon({
+                icon_name: 'view-list-bullet-symbolic',
+                icon_size: 10,
+                style: 'color: #38bdf8;',
+            }));
+            this._peekTaskBadgeLabel = new St.Label({
+                text: String(pendingTasks),
+                style: 'color: #38bdf8; font-weight: 700;',
+            });
+            this._peekTaskBadge.add_child(this._peekTaskBadgeLabel);
+            statusChip.add_child(this._peekTaskBadge);
 
-            if (meta.netSpeed?.active) {
-                this._netSpeedLabel = new St.Label({
-                    text: meta.netSpeed.summary,
-                    style_class: 'bayisland-net-speed-label',
-                    y_align: Clutter.ActorAlign.CENTER,
-                });
-                statusChip.add_child(this._netSpeedLabel);
-            }
             rightGroup.add_child(statusChip);
 
             rightGroup.add_child(new St.Bin({
@@ -744,22 +725,22 @@ export class CompactView {
 
         this._appendPrivacyDots(row, priv);
 
-        if (unread > 0) {
-            this._integratedDot = new St.Widget({
-                style_class: 'bayisland-idle-handle-dot',
-                y_align: Clutter.ActorAlign.CENTER,
-                ...(accentBright ? { style: `background-color: ${accentBright};` } : {}),
-            });
-            row.add_child(this._integratedDot);
-        } else if (meta.dnd) {
-            this._peekDndIcon = new St.Icon({
-                icon_name: 'notifications-disabled-symbolic',
-                icon_size: 11,
-                style: 'color: #fbbf24;',
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-            row.add_child(this._peekDndIcon);
-        }
+        this._integratedDot = new St.Widget({
+            style_class: 'bayisland-idle-handle-dot',
+            y_align: Clutter.ActorAlign.CENTER,
+            ...(accentBright ? { style: `background-color: ${accentBright};` } : {}),
+            visible: unread > 0,
+        });
+        row.add_child(this._integratedDot);
+
+        this._peekDndIcon = new St.Icon({
+            icon_name: 'notifications-disabled-symbolic',
+            icon_size: 11,
+            style: 'color: #fbbf24;',
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: unread === 0 && Boolean(meta.dnd),
+        });
+        row.add_child(this._peekDndIcon);
 
         return this._attachRoot(row);
     }
@@ -846,13 +827,24 @@ export class CompactView {
             style_class: 'bayisland-peek-chip',
             y_align: Clutter.ActorAlign.CENTER,
         });
-        this._peekProfileIcon = new St.Icon({
-            icon_name: getProfileIconName(meta.powerProfile),
-            icon_size: 13,
-            style: `color: ${palette?.accentOnDarkCss ?? palette?.accentCss ?? '#93c5fd'};`,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        statusChip.add_child(this._peekProfileIcon);
+
+        // Swap static power profile icon with live network speed badge to keep layout spacious
+        if (meta.netSpeed?.active) {
+            this._netSpeedLabel = new St.Label({
+                text: meta.netSpeed.summary,
+                style_class: 'bayisland-net-speed-label',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            statusChip.add_child(this._netSpeedLabel);
+        } else {
+            this._peekProfileIcon = new St.Icon({
+                icon_name: getProfileIconName(meta.powerProfile),
+                icon_size: 13,
+                style: `color: ${palette?.accentOnDarkCss ?? palette?.accentCss ?? '#93c5fd'};`,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            statusChip.add_child(this._peekProfileIcon);
+        }
 
         const unread = meta.unreadNotifs ?? 0;
         if (unread > 0) {
@@ -903,14 +895,6 @@ export class CompactView {
             statusChip.add_child(this._peekTaskBadge);
         }
 
-        if (meta.netSpeed?.active) {
-            this._netSpeedLabel = new St.Label({
-                text: meta.netSpeed.summary,
-                style_class: 'bayisland-net-speed-label',
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-            statusChip.add_child(this._netSpeedLabel);
-        }
         rightGroup.add_child(statusChip);
 
         rightGroup.add_child(new St.Bin({
@@ -1106,6 +1090,127 @@ export class CompactView {
         return this._attachRoot(wrap);
     }
 
+    _renderTask(task, palette, _model = null) {
+        this._resetRefs();
+        this._currentPrimary = 'task';
+        this._lastPalette = palette;
+
+        const acc = palette?.accentCss || '#38bdf8';
+
+        const box = new St.BoxLayout({
+            style_class: 'bayisland-compact-box bayisland-task-pill',
+            reactive: true,
+            x_expand: true,
+            y_expand: true,
+            height: this._integratedInSlot ? this._integratedHeight : 34,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
+        // Lightning/terminal pulse icon
+        const icon = new St.Icon({
+            icon_name: 'utilities-terminal-symbolic',
+            icon_size: 13,
+            style: `color: ${palette?.accentOnDarkCss || acc}; margin-left: 2px; margin-right: 4px;`,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        box.add_child(icon);
+
+        // Command label
+        const cmd = sanitizeSingleLine(task?.shortCmd || task?.cmd || 'Task');
+        this._taskCmdLabel = new St.Label({
+            text: cmd,
+            style_class: 'bayisland-compact-title',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._taskCmdLabel.clutter_text.single_line_mode = true;
+        this._taskCmdLabel.clutter_text.line_wrap = false;
+        this._taskCmdLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+        box.add_child(this._taskCmdLabel);
+
+        // Bullet separator
+        box.add_child(new St.Label({
+            text: '•',
+            style_class: 'bayisland-peek-sep',
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+
+        // Elapsed time
+        const elapsed = task?.elapsedSec ?? 0;
+        this._taskTimerLabel = new St.Label({
+            text: formatClock(elapsed),
+            style_class: 'bayisland-timer-pill-text',
+            style: `color: ${palette?.accentOnDarkCss || acc};`,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        box.add_child(this._taskTimerLabel);
+
+        // Click-to-focus terminal
+        box.connect('button-press-event', () => {
+            this._onTaskClick?.(task);
+            return Clutter.EVENT_STOP;
+        });
+
+        return this._attachRoot(box);
+    }
+
+    _renderRecording(recording, palette) {
+        this._resetRefs();
+        this._currentPrimary = 'recording';
+        this._lastPalette = palette;
+
+        const box = new St.BoxLayout({
+            style_class: 'bayisland-compact-box bayisland-rec-pill',
+            reactive: true,
+            x_expand: true,
+            y_expand: true,
+            height: this._integratedInSlot ? this._integratedHeight : 34,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
+        const dot = new St.Widget({
+            style_class: 'bayisland-rec-dot',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        box.add_child(dot);
+
+        const recLabel = new St.Label({
+            text: 'REC',
+            style_class: 'bayisland-rec-label',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        box.add_child(recLabel);
+
+        box.add_child(new St.Label({
+            text: '•',
+            style_class: 'bayisland-peek-sep',
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+
+        const elapsed = recording?.elapsedSec ?? 0;
+        this._recTimerLabel = new St.Label({
+            text: formatClock(elapsed),
+            style_class: 'bayisland-timer-pill-text',
+            style: 'color: #f87171;',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        box.add_child(this._recTimerLabel);
+
+        const stopBtn = new St.Button({
+            style_class: 'bayisland-rec-stop-btn',
+            label: '⏹ Stop',
+            reactive: true,
+            can_focus: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        stopBtn.connect('clicked', () => {
+            this._onStopRecording?.();
+            return Clutter.EVENT_STOP;
+        });
+        box.add_child(stopBtn);
+
+        return this._attachRoot(box);
+    }
+
     _renderMedia(media, palette, model = null) {
         this._resetRefs();
         this._currentPrimary = 'media';
@@ -1141,11 +1246,13 @@ export class CompactView {
         box.add_child(artWrap);
 
         this._titleLabel = new St.Label({
-            text: media.title || 'Playing',
+            text: sanitizeSingleLine(media.title) || 'Playing',
             style_class: 'bayisland-compact-title',
             x_expand: true,
             y_align: Clutter.ActorAlign.CENTER,
         });
+        this._titleLabel.clutter_text.single_line_mode = true;
+        this._titleLabel.clutter_text.line_wrap = false;
         this._titleLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
         box.add_child(this._titleLabel);
 

@@ -64,6 +64,13 @@
       <description>Vertical offset from the top bezel (or below Top Bar when dropped).</description>
     </key>
 
+    <key name="expanded-top-margin" type="i">
+      <default>6</default>
+      <range min="0" max="64"/>
+      <summary>Expanded Modal Top Gap (px)</summary>
+      <description>Vertical gap between the expanded container and the top edge of screen or Top Bar.</description>
+    </key>
+
     <key name="hide-in-fullscreen" type="b">
       <default>false</default>
       <summary>Hide Completely in Fullscreen</summary>
@@ -262,6 +269,12 @@
       <description>Enable Clock, Calendar, Wi-Fi, Bluetooth, Night Light, DND, and Screenshot controls inside Home tab.</description>
     </key>
 
+    <key name="enable-command-runner" type="b">
+      <default>true</default>
+      <summary>Enable Command Runner &amp; Calculator</summary>
+      <description>Enable quick math calculator and shell command runner bar in Expanded Bento Hub.</description>
+    </key>
+
     <key name="tab-order" type="as">
       <default>['home', 'media', 'power', 'clipboard', 'shelf']</default>
       <summary>Hub Tab Order</summary>
@@ -278,6 +291,12 @@
       <default>['&lt;Super&gt;&lt;Alt&gt;i']</default>
       <summary>Toggle Expanded View Shortcut</summary>
       <description>Keyboard shortcut to toggle the BayIsland expanded hub.</description>
+    </key>
+
+    <key name="quick-runner-shortcut" type="as">
+      <default>['&lt;Super&gt;&lt;Alt&gt;r']</default>
+      <summary>Quick Command Runner / Search Bar Shortcut</summary>
+      <description>Keyboard shortcut to open BayIsland and focus the calculator and command runner search bar.</description>
     </key>
 
     <key name="quick-timer-shortcut" type="as">
@@ -308,6 +327,12 @@
       <default>'none'</default>
       <summary>Clock in Media Island</summary>
       <description>Show clock in media island: 'none', 'left', or 'right'.</description>
+    </key>
+
+    <key name="monitor-mode" type="s">
+      <default>'primary'</default>
+      <summary>Target Display Monitor</summary>
+      <description>Display monitor for Separate mode: 'primary' or 'active' (follow active monitor).</description>
     </key>
 
   </schema>

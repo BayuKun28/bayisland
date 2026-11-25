@@ -359,22 +359,51 @@ export class ClipboardManager extends Signals.EventEmitter {
             this._timers.clear(this._saveTimerId);
         this._saveTimerId = this._timers.setTimeout(600, () => {
             this._saveTimerId = 0;
-            this._writeToDiskNow();
+            this._writeToDiskAsync();
         });
     }
 
-    _writeToDiskNow() {
-        try {
-            GLib.mkdir_with_parents(this._storeDir, 0o700);
-            const serializable = this._entries
+    _serializeEntries() {
+        return JSON.stringify(
+            this._entries
                 .filter(e => e.text.length <= 65_536)
                 .map(e => ({
                     text: e.text,
                     pinned: e.pinned,
                     timestampMs: e.timestampMs,
                     fileUris: e.fileUris,
-                }));
-            GLib.file_set_contents(this._storePath, JSON.stringify(serializable));
+                }))
+        );
+    }
+
+    _writeToDiskAsync() {
+        try {
+            GLib.mkdir_with_parents(this._storeDir, 0o700);
+            const file = Gio.File.new_for_path(this._storePath);
+            const bytes = new TextEncoder().encode(this._serializeEntries());
+            file.replace_contents_async(
+                bytes,
+                null,
+                false,
+                Gio.FileCreateFlags.REPLACE_DESTINATION,
+                null,
+                (f, res) => {
+                    try {
+                        f.replace_contents_finish(res);
+                    } catch (e) {
+                        logError(e, 'BayIsland failed to save clipboard history');
+                    }
+                }
+            );
+        } catch (e) {
+            logError(e, 'BayIsland failed to save clipboard history');
+        }
+    }
+
+    _writeToDiskNow() {
+        try {
+            GLib.mkdir_with_parents(this._storeDir, 0o700);
+            GLib.file_set_contents(this._storePath, this._serializeEntries());
         } catch (e) {
             logError(e, 'BayIsland failed to save clipboard history');
         }

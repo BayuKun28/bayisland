@@ -13,6 +13,10 @@
   box-shadow: none !important;
 }
 
+.bayisland-shell StButton {
+  transition-duration: 130ms;
+}
+
 .bayisland-shell {
   background-color: rgba(10, 12, 17, 0.96);
   border: none;
@@ -97,24 +101,7 @@
   background-color: rgba(10, 12, 17, 0.97);
   border: none;
   border-radius: 26px;
-  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.72) !important;
-}
-
-/* Corner squircle morphing classes for smooth pill <-> modal transition */
-.bayisland-shell.bayisland-corner-morph-stage1 {
-  border-radius: 64px !important;
-}
-
-.bayisland-shell.bayisland-corner-morph-stage2 {
-  border-radius: 42px !important;
-}
-
-.bayisland-shell.bayisland-corner-morph-stage3 {
-  border-radius: 32px !important;
-}
-
-.bayisland-shell.bayisland-corner-morph-pill {
-  border-radius: 999px !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.52) !important;
 }
 
 .bayisland-content-bin {
@@ -235,7 +222,7 @@
 }
 
 .bayisland-peek-ring-num {
-  font-size: 8px;
+  font-size: 9.5px;
   font-weight: 800;
   color: #f8fafc;
   font-feature-settings: "tnum";
@@ -305,6 +292,10 @@
   spacing: 8px;
 }
 
+.bayisland-task-pill {
+  padding: 0px;
+}
+
 .bayisland-idle-dot {
   width: 6px;
   height: 6px;
@@ -353,6 +344,7 @@
   font-size: 12px;
   font-weight: 600;
   color: #f8fafc;
+  max-height: 18px;
 }
 
 .bayisland-compact-sub {
@@ -373,7 +365,7 @@
   border-radius: 999px;
   padding: 3px 5px;
   color: #94a3b8;
-  transition: all 120ms ease;
+  transition-duration: 120ms;
 }
 
 .bayisland-compact-min-btn:hover {
@@ -694,7 +686,7 @@
 .bayisland-section-title {
   font-size: 10px;
   font-weight: 800;
-  color: #64748b;
+  color: #7d8ea6;
 }
 
 .bayisland-muted-sm {
@@ -704,7 +696,7 @@
 
 .bayisland-muted-xs {
   font-size: 10px;
-  color: #64748b;
+  color: #7d8ea6;
 }
 
 .bayisland-kv-val {
@@ -773,12 +765,10 @@
 /* ---------- Home Tab: Editorial Date, Borderless Calendar, Quick Actions & Feed ---------- */
 
 .bayisland-home-left {
-  width: 344px;
   spacing: 10px;
 }
 
 .bayisland-home-right {
-  width: 344px;
   spacing: 10px;
 }
 
@@ -901,7 +891,7 @@
   font-size: 10px;
   font-weight: 500;
   width: 22px;
-  height: 21px;
+  height: 22px;
   padding: 0px;
   margin: 0px;
   border-radius: 999px;
@@ -922,8 +912,8 @@
 .bayisland-calendar-wrap .calendar .calendar-day:active,
 .bayisland-calendar-wrap .calendar .calendar-day-base:selected,
 .bayisland-calendar-wrap .calendar .calendar-day-base:active {
-  background-color: rgba(241, 245, 249, 0.9);
-  color: #090d16;
+  background-color: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
   font-weight: 700;
 }
 
@@ -1069,7 +1059,7 @@
 /* ---------- Media Tab (Compact Landscape Hero Stage + Audio Mixer) ---------- */
 
 .bayisland-media-stage {
-  width: 374px;
+  min-width: 280px;
   padding: 14px 16px;
   spacing: 10px;
 }
@@ -1247,11 +1237,36 @@
   padding-right: 4px;
 }
 
+.bayisland-shell StScrollBar {
+  padding: 0px;
+  background-color: transparent;
+}
+
+.bayisland-shell StScrollBar StBin#trough {
+  background-color: transparent;
+  border-radius: 999px;
+}
+
+.bayisland-shell StScrollBar StButton#vhandle,
+.bayisland-shell StScrollBar StButton#hhandle {
+  background-color: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  min-width: 5px;
+  min-height: 24px;
+  margin: 2px;
+}
+
+.bayisland-shell StScrollBar StButton#vhandle:hover,
+.bayisland-shell StScrollBar StButton#hhandle:hover {
+  background-color: rgba(255, 255, 255, 0.30);
+}
+
 .bayisland-list-card {
   padding: 6px 10px;
   border-radius: 12px;
   border: none;
   background-color: rgba(255, 255, 255, 0.045);
+  transition-duration: 130ms;
 }
 
 .bayisland-list-card:hover {
@@ -1320,6 +1335,7 @@
   border-radius: 12px;
   border: none;
   background-color: rgba(255, 255, 255, 0.048);
+  transition-duration: 130ms;
 }
 
 .bayisland-notif-card:hover {
@@ -1412,6 +1428,7 @@
   background-color: rgba(255, 255, 255, 0.038);
   margin-bottom: 3px;
   spacing: 8px;
+  transition-duration: 130ms;
 }
 
 .bayisland-task-row:hover {
@@ -1470,10 +1487,10 @@
   border-radius: 999px;
   background-color: rgba(16, 185, 129, 0.18);
   color: #34d399;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   font-feature-settings: "tnum";
-  margin-left: 4px;
+  margin: 0px;
 }
 
 /* Island Quick Command Runner & Instant Calculator */
@@ -1553,9 +1570,9 @@
 }
 
 .bayisland-runner-out-time {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
-  color: #64748b;
+  color: #7d8ea6;
   font-feature-settings: "tnum";
 }
 
@@ -1569,4 +1586,42 @@
   font-size: 10.5px;
   font-family: monospace;
   line-height: 1.34;
+}
+
+/* Screen Recording Live HUD */
+.bayisland-rec-pill {
+  spacing: 6px;
+  padding: 0 8px 0 10px;
+}
+
+.bayisland-rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background-color: #ef4444;
+  margin-right: 2px;
+}
+
+.bayisland-rec-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: #ef4444;
+  letter-spacing: 0.5px;
+}
+
+.bayisland-rec-stop-btn {
+  padding: 2px 8px;
+  border-radius: 10px;
+  background-color: rgba(239, 68, 68, 0.22);
+  color: #fca5a5;
+  font-size: 10.5px;
+  font-weight: 700;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  margin-left: 4px;
+}
+
+.bayisland-rec-stop-btn:hover {
+  background-color: rgba(239, 68, 68, 0.45);
+  color: #ffffff;
+  border-color: rgba(239, 68, 68, 0.7);
 }

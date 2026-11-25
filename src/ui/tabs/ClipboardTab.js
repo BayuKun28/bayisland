@@ -29,6 +29,9 @@ export class ClipboardTab {
         this._modeBtn = null;
         this._query = '';
         this._pinnedOnly = false;
+        this._selectedIdx = 0;
+        this._filteredItems = [];
+        this._rowNodes = [];
         this._lastSnapshot = null;
         this._lastPalette = null;
     }
@@ -72,11 +75,25 @@ export class ClipboardTab {
         });
         this._searchEntry.clutter_text.connect('key-press-event', (_actor, event) => {
             const sym = event.get_key_symbol();
+            if (sym === Clutter.KEY_Down) {
+                if (this._filteredItems.length > 0) {
+                    this._selectedIdx = Math.min(this._filteredItems.length - 1, this._selectedIdx + 1);
+                    this._syncRowHighlight();
+                }
+                return Clutter.EVENT_STOP;
+            }
+            if (sym === Clutter.KEY_Up) {
+                if (this._filteredItems.length > 0) {
+                    this._selectedIdx = Math.max(0, this._selectedIdx - 1);
+                    this._syncRowHighlight();
+                }
+                return Clutter.EVENT_STOP;
+            }
             if (sym === Clutter.KEY_Return || sym === Clutter.KEY_KP_Enter) {
-                const first = this._firstFilteredItem;
-                if (first) {
+                const target = this._filteredItems[this._selectedIdx] || this._firstFilteredItem;
+                if (target) {
                     this._cb.onReleaseTextModal?.();
-                    this._cb.onClipActivate?.(first.id, null);
+                    this._cb.onClipActivate?.(target.id, null);
                     return Clutter.EVENT_STOP;
                 }
             } else if (sym === Clutter.KEY_Escape) {
@@ -238,6 +255,9 @@ export class ClipboardTab {
         });
 
         this._firstFilteredItem = items[0] || null;
+        this._filteredItems = items.slice(0, 40);
+        this._rowNodes = [];
+        this._selectedIdx = 0;
 
         if (items.length === 0) {
             this._listBox.add_child(this._emptyState(
@@ -246,8 +266,24 @@ export class ClipboardTab {
             return;
         }
 
-        for (const item of items.slice(0, 40))
-            this._listBox.add_child(this._buildRow(item));
+        for (const item of this._filteredItems) {
+            const row = this._buildRow(item);
+            this._rowNodes.push(row);
+            this._listBox.add_child(row);
+        }
+        this._syncRowHighlight();
+    }
+
+    _syncRowHighlight() {
+        const acc = this._lastPalette?.accentCss || '#93c5fd';
+        for (let i = 0; i < this._rowNodes.length; i++) {
+            const row = this._rowNodes[i];
+            if (!row)
+                continue;
+            row.style = i === this._selectedIdx && this._query.trim()
+                ? `spacing: 8px; border: 1px solid ${acc};`
+                : 'spacing: 8px;';
+        }
     }
 
     _emptyState(text) {

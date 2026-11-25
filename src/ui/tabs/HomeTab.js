@@ -7,6 +7,8 @@ import St from 'gi://St';
 import * as Calendar from 'resource:///org/gnome/shell/ui/calendar.js';
 
 import { formatNotificationContent } from '../../utils/NotifFormatter.js';
+import { formatClock } from '../../utils/Formatters.js';
+import { ScratchpadManager } from '../../managers/ScratchpadManager.js';
 
 const EN_WEEKDAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 const EN_DAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -14,13 +16,6 @@ const EN_MONTHS = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
 ];
-
-function formatClock(sec) {
-    const s = Math.max(0, Math.floor(sec));
-    const m = Math.floor(s / 60);
-    const rem = s % 60;
-    return `${String(m).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
-}
 
 function formatRelativeTime(tsMs) {
     const diffSec = Math.max(0, Math.floor((Date.now() - tsMs) / 1000));
@@ -115,8 +110,21 @@ export class HomeTab {
         this._timerValueLabel = null;
         this._timerSubLabel = null;
         this._timerToggleBtn = null;
+        this._timerActiveBtns = null;
+        this._timerPresetBtns = null;
+        this._timerActiveBtns = null;
+        this._timerPresetBtns = null;
         this._qaHintLabel = null;
         this._quickBtns = {};
+        this._brightRow = null;
+        this._brightTrack = null;
+        this._brightFill = null;
+        this._brightPctLbl = null;
+        this._brightRow = null;
+        this._brightTrack = null;
+        this._brightFill = null;
+        this._brightPctLbl = null;
+        this._lastBrightFrac = 0;
 
         this._feedBox = null;
         this._feedScroll = null;
@@ -132,7 +140,10 @@ export class HomeTab {
 
         // Scratchpad / Interactive To-Do
         this._activeFeedTab = 'notifications';
-        this._scratchTasks = this._loadScratchpadTasks();
+        this._scratchpad = new ScratchpadManager();
+        this._scratchpadSigId = this._scratchpad.connect('changed', (_s, count) => {
+            this._updatePendingTaskCount(count);
+        });
         this._scratchBox = null;
         this._scratchScroll = null;
         this._scratchEntry = null;
@@ -141,7 +152,7 @@ export class HomeTab {
         this._notifTabBtn = null;
         this._taskTabBtn = null;
 
-        const pendingInitial = this._scratchTasks.filter(t => !t.done).length;
+        const pendingInitial = this._scratchpad.getPendingCount();
         if (pendingInitial > 0)
             this._cb.onTasksCountChanged?.(pendingInitial);
     }
@@ -161,11 +172,11 @@ export class HomeTab {
             y_expand: true,
         });
 
-        // Left Column (344px): Today Agenda + Borderless Calendar (top), Hardware Quick Actions (bottom)
+        // Left Column: Today Agenda + Borderless Calendar (top), Hardware Quick Actions (bottom)
         const leftCol = new St.BoxLayout({
             style_class: 'bayisland-home-left',
             vertical: true,
-            x_expand: false,
+            x_expand: true,
             y_expand: true,
         });
 
@@ -380,6 +391,104 @@ export class HomeTab {
             gl.attach(tileBtn.btn, t.col, 0, 1, 1);
         }
         qaCard.add_child(grid);
+
+        const hasBright = qa.brightnessFraction !== null && qa.brightnessFraction !== undefined;
+        this._lastBrightFrac = hasBright ? Math.max(0, Math.min(1, qa.brightnessFraction)) : 0.5;
+        this._brightRow = new St.BoxLayout({
+            x_expand: true,
+            style: 'spacing: 8px; margin-top: 2px;',
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: hasBright,
+        });
+        this._brightRow.add_child(new St.Icon({
+            icon_name: 'display-brightness-symbolic',
+            icon_size: 13,
+            style: 'color: #facc15;',
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+        this._brightTrack = new St.Widget({
+            style_class: 'bayisland-level-track',
+            x_expand: true,
+            height: 6,
+            layout_manager: new Clutter.BinLayout(),
+            clip_to_allocation: true,
+            reactive: true,
+            track_hover: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._brightFill = new St.Widget({
+            style_class: 'bayisland-level-fill',
+            style: `background-color: ${acc};`,
+            width: Math.max(4, Math.round(210 * this._lastBrightFrac)),
+            x_align: Clutter.ActorAlign.START,
+        });
+        this._brightTrack.add_child(this._brightFill);
+
+        let brightDragging = false;
+        const applyBright = frac => {
+            const clamped = Math.max(0.02, Math.min(1, frac));
+            this._lastBrightFrac = clamped;
+            const tw = this._brightTrack?.width > 20 ? this._brightTrack.width : 210;
+            if (this._brightFill)
+                this._brightFill.width = Math.max(4, Math.round(tw * clamped));
+            if (this._brightPctLbl)
+                this._brightPctLbl.text = `${Math.round(clamped * 100)}%`;
+            this._cb.onSetBrightnessFraction?.(clamped);
+        };
+        const setBrightFromEvent = ev => {
+            const [ex] = ev.get_coords();
+            const [tx] = this._brightTrack.get_transformed_position();
+            const tw = Math.max(1, this._brightTrack.width);
+            applyBright((ex - tx) / tw);
+        };
+        this._brightTrack.connect('button-press-event', (_a, ev) => {
+            if (ev.get_button() !== Clutter.BUTTON_PRIMARY)
+                return Clutter.EVENT_PROPAGATE;
+            brightDragging = true;
+            setBrightFromEvent(ev);
+            return Clutter.EVENT_STOP;
+        });
+        this._brightTrack.connect('motion-event', (_a, ev) => {
+            if (!brightDragging)
+                return Clutter.EVENT_PROPAGATE;
+            setBrightFromEvent(ev);
+            return Clutter.EVENT_STOP;
+        });
+        this._brightTrack.connect('button-release-event', () => {
+            if (!brightDragging)
+                return Clutter.EVENT_PROPAGATE;
+            brightDragging = false;
+            return Clutter.EVENT_STOP;
+        });
+        this._brightTrack.connect('leave-event', () => {
+            brightDragging = false;
+            return Clutter.EVENT_PROPAGATE;
+        });
+        this._brightTrack.connect('scroll-event', (_a, ev) => {
+            const dir = ev.get_scroll_direction();
+            let delta = 0;
+            if (dir === Clutter.ScrollDirection.UP) delta = 0.05;
+            else if (dir === Clutter.ScrollDirection.DOWN) delta = -0.05;
+            else if (dir === Clutter.ScrollDirection.SMOOTH) {
+                const [, dy] = ev.get_scroll_delta();
+                delta = -dy * 0.03;
+            }
+            if (delta !== 0) {
+                applyBright(this._lastBrightFrac + delta);
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
+        this._brightRow.add_child(this._brightTrack);
+
+        this._brightPctLbl = new St.Label({
+            text: `${Math.round(this._lastBrightFrac * 100)}%`,
+            style_class: 'bayisland-muted-xs',
+            style: 'min-width: 30px; text-align: right; font-feature-settings: "tnum";',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._brightRow.add_child(this._brightPctLbl);
+        qaCard.add_child(this._brightRow);
         leftCol.add_child(qaCard);
         root.add_child(leftCol);
 
@@ -467,14 +576,13 @@ export class HomeTab {
 
         for (const btn of (cal._buttons ?? [])) {
             btn.can_focus = false;
-            const isToday = btn.has_style_class_name?.('calendar-today') || isSameLocalDay(btn._date, now);
-            const isSelected = btn.has_style_pseudo_class?.('selected') || isSameLocalDay(btn._date, sel);
-            if (isToday)
-                btn.style = `background-color: ${acc}; background-image: none; color: ${fg} !important; font-weight: 700; border: none;`;
-            else if (isSelected)
-                btn.style = 'background-color: rgba(241, 245, 249, 0.92); background-image: none; color: #090d16 !important; font-weight: 700; border: none;';
-            else
+            if (btn.style)
                 btn.style = null;
+        }
+        if (acc && acc !== '#93c5fd' && cal._buttons) {
+            const todayBtn = cal._buttons.find(b => b.has_style_class_name?.('calendar-today') || isSameLocalDay(b._date, now));
+            if (todayBtn)
+                todayBtn.style = `background-color: ${acc}; background-image: none; color: ${fg} !important; font-weight: 700; border: none;`;
         }
     }
 
@@ -573,6 +681,22 @@ export class HomeTab {
             if (tile.btn.hover && this._qaHintLabel)
                 this._qaHintLabel.text = spec.label;
         }
+
+        if (this._brightRow) {
+            const hasBright = qa.brightnessFraction !== null && qa.brightnessFraction !== undefined;
+            this._brightRow.visible = hasBright;
+            if (hasBright) {
+                const frac = Math.max(0, Math.min(1, qa.brightnessFraction));
+                this._lastBrightFrac = frac;
+                const tw = this._brightTrack?.width > 20 ? this._brightTrack.width : 210;
+                if (this._brightFill) {
+                    this._brightFill.width = Math.max(4, Math.round(tw * frac));
+                    this._brightFill.style = `background-color: ${acc};`;
+                }
+                if (this._brightPctLbl)
+                    this._brightPctLbl.text = `${Math.round(frac * 100)}%`;
+            }
+        }
     }
 
     _buildTimerCard(timer, palette) {
@@ -628,87 +752,68 @@ export class HomeTab {
             y_align: Clutter.ActorAlign.CENTER,
         });
 
-        if (hasActive) {
-            this._timerToggleBtn = new St.Button({
-                label: timer.running ? 'Pause' : 'Resume',
-                style_class: 'bayisland-focus-btn bayisland-action-btn-primary',
-                style: `background-color: ${acc}; color: ${fg};`,
-                reactive: true,
-                can_focus: false,
-            });
-            this._timerToggleBtn.connect('clicked', () => this._cb.onTimerTogglePause?.());
-            btnRow.add_child(this._timerToggleBtn);
+        this._timerActiveBtns = new St.BoxLayout({
+            style: 'spacing: 5px;',
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: hasActive,
+        });
+        this._timerToggleBtn = new St.Button({
+            label: timer?.running ? 'Pause' : 'Resume',
+            style_class: 'bayisland-focus-btn bayisland-action-btn-primary',
+            style: `background-color: ${acc}; color: ${fg};`,
+            reactive: true,
+            can_focus: false,
+        });
+        this._timerToggleBtn.connect('clicked', () => this._cb.onTimerTogglePause?.());
+        this._timerActiveBtns.add_child(this._timerToggleBtn);
 
-            const plusBtn = new St.Button({
-                label: '+1m',
-                style_class: 'bayisland-focus-btn',
-                reactive: true,
-                can_focus: false,
-            });
-            plusBtn.connect('clicked', () => this._cb.onTimerAddSeconds?.(60));
-            btnRow.add_child(plusBtn);
+        const plusBtn = new St.Button({
+            label: '+1m',
+            style_class: 'bayisland-focus-btn',
+            reactive: true,
+            can_focus: false,
+        });
+        plusBtn.connect('clicked', () => this._cb.onTimerAddSeconds?.(60));
+        this._timerActiveBtns.add_child(plusBtn);
 
-            const stopBtn = new St.Button({
-                label: 'Stop',
-                style_class: 'bayisland-focus-btn',
+        const stopBtn = new St.Button({
+            label: 'Stop',
+            style_class: 'bayisland-focus-btn',
+            reactive: true,
+            can_focus: false,
+        });
+        stopBtn.connect('clicked', () => this._cb.onTimerStop?.());
+        this._timerActiveBtns.add_child(stopBtn);
+        btnRow.add_child(this._timerActiveBtns);
+
+        this._timerPresetBtns = new St.BoxLayout({
+            style: 'spacing: 5px;',
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: !hasActive,
+        });
+        const presets = [
+            { sec: 300, label: '5m', mode: 'countdown', title: '5m Break', primary: false },
+            { sec: 900, label: '15m', mode: 'countdown', title: '15m Focus', primary: false },
+            { sec: 1500, label: '25m', mode: 'pomodoro', title: 'Pomodoro', primary: true },
+        ];
+        for (const p of presets) {
+            const btn = new St.Button({
+                label: p.label,
+                style_class: `bayisland-focus-btn${p.primary ? ' bayisland-action-btn-primary' : ''}`,
+                ...(p.primary ? { style: `background-color: ${acc}; color: ${fg};` } : {}),
                 reactive: true,
                 can_focus: false,
             });
-            stopBtn.connect('clicked', () => this._cb.onTimerStop?.());
-            btnRow.add_child(stopBtn);
-        } else {
-            const presets = [
-                { sec: 300, label: '5m', mode: 'countdown', title: '5m Break', primary: false },
-                { sec: 900, label: '15m', mode: 'countdown', title: '15m Focus', primary: false },
-                { sec: 1500, label: '25m', mode: 'pomodoro', title: 'Pomodoro', primary: true },
-            ];
-            for (const p of presets) {
-                const btn = new St.Button({
-                    label: p.label,
-                    style_class: `bayisland-focus-btn${p.primary ? ' bayisland-action-btn-primary' : ''}`,
-                    ...(p.primary ? { style: `background-color: ${acc}; color: ${fg};` } : {}),
-                    reactive: true,
-                    can_focus: false,
-                });
-                btn.connect('clicked', () => this._cb.onTimerStart?.(p.sec, p.mode, p.title));
-                btnRow.add_child(btn);
-            }
+            btn.connect('clicked', () => this._cb.onTimerStart?.(p.sec, p.mode, p.title));
+            this._timerPresetBtns.add_child(btn);
         }
+        btnRow.add_child(this._timerPresetBtns);
         bottomRow.add_child(btnRow);
         card.add_child(bottomRow);
         return card;
     }
 
-    _loadScratchpadTasks() {
-        try {
-            const dirPath = GLib.build_filenamev([GLib.get_user_cache_dir(), 'bayisland']);
-            const path = GLib.build_filenamev([dirPath, 'scratchpad.json']);
-            const file = Gio.File.new_for_path(path);
-            if (!file.query_exists(null))
-                return [];
-            const [, bytes] = file.load_contents(null);
-            const str = new TextDecoder().decode(bytes);
-            const data = JSON.parse(str);
-            return Array.isArray(data) ? data : [];
-        } catch {
-            return [];
-        }
-    }
-
-    _saveScratchpadTasks() {
-        try {
-            const dirPath = GLib.build_filenamev([GLib.get_user_cache_dir(), 'bayisland']);
-            GLib.mkdir_with_parents(dirPath, 0o755);
-            const path = GLib.build_filenamev([dirPath, 'scratchpad.json']);
-            const file = Gio.File.new_for_path(path);
-            const json = JSON.stringify(this._scratchTasks, null, 2);
-            file.replace_contents(json, null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null);
-        } catch {}
-        this._updatePendingTaskCount();
-    }
-
-    _updatePendingTaskCount() {
-        const pendingCount = this._scratchTasks.filter(t => !t.done).length;
+    _updatePendingTaskCount(pendingCount = this._scratchpad.getPendingCount()) {
         if (this._scratchCountPill) {
             this._scratchCountPill.text = String(pendingCount);
             this._scratchCountPill.visible = this._activeFeedTab === 'tasks' && pendingCount > 0;
@@ -716,9 +821,11 @@ export class HomeTab {
         this._cb.onTasksCountChanged?.(pendingCount);
     }
 
-    _setFeedTab(tab, acc, fg) {
+    _setFeedTab(tab) {
         this._activeFeedTab = tab;
         const isNotif = tab === 'notifications';
+        const acc = this._lastPalette?.accentCss || '#93c5fd';
+        const fg = this._lastPalette?.accentFgCss || '#090d16';
 
         if (this._notifTabBtn) {
             this._notifTabBtn.style_class = `bayisland-feed-seg-btn${isNotif ? ' bayisland-feed-seg-active' : ''}`;
@@ -735,11 +842,11 @@ export class HomeTab {
             this._clearAllBtn.visible = isNotif && Boolean(this._feedBox?.get_children()?.length);
 
         if (this._scratchCountPill) {
-            const pendingTasks = this._scratchTasks.filter(t => !t.done).length;
+            const pendingTasks = this._scratchpad.getPendingCount();
             this._scratchCountPill.visible = !isNotif && pendingTasks > 0;
         }
         if (this._clearTasksBtn)
-            this._clearTasksBtn.visible = !isNotif && this._scratchTasks.some(t => t.done);
+            this._clearTasksBtn.visible = !isNotif && this._scratchpad.hasDoneTasks();
 
         if (this._scratchEntry)
             this._scratchEntry.visible = !isNotif;
@@ -755,7 +862,8 @@ export class HomeTab {
         this._scratchBox.destroy_all_children();
 
         const acc = this._lastPalette?.accentCss || '#93c5fd';
-        if (this._scratchTasks.length === 0) {
+        const tasks = this._scratchpad.getTasks();
+        if (tasks.length === 0) {
             const empty = new St.BoxLayout({
                 vertical: true,
                 x_expand: true,
@@ -777,7 +885,7 @@ export class HomeTab {
             return;
         }
 
-        for (const item of this._scratchTasks) {
+        for (const item of tasks) {
             const row = new St.BoxLayout({
                 style_class: 'bayisland-task-row',
                 x_expand: true,
@@ -795,8 +903,7 @@ export class HomeTab {
                 }),
             });
             checkBtn.connect('clicked', () => {
-                item.done = !item.done;
-                this._saveScratchpadTasks();
+                this._scratchpad.toggleTask(item.id);
                 this._populateScratchpad();
             });
             row.add_child(checkBtn);
@@ -822,8 +929,7 @@ export class HomeTab {
                 }),
             });
             delBtn.connect('clicked', () => {
-                this._scratchTasks = this._scratchTasks.filter(t => t.id !== item.id);
-                this._saveScratchpadTasks();
+                this._scratchpad.deleteTask(item.id);
                 this._populateScratchpad();
             });
             row.add_child(delBtn);
@@ -832,7 +938,7 @@ export class HomeTab {
         }
 
         if (this._clearTasksBtn)
-            this._clearTasksBtn.visible = this._activeFeedTab === 'tasks' && this._scratchTasks.some(t => t.done);
+            this._clearTasksBtn.visible = this._activeFeedTab === 'tasks' && this._scratchpad.hasDoneTasks();
     }
 
     _buildFeedCard(palette) {
@@ -873,8 +979,8 @@ export class HomeTab {
             can_focus: false,
         });
 
-        this._notifTabBtn.connect('clicked', () => this._setFeedTab('notifications', acc, fg));
-        this._taskTabBtn.connect('clicked', () => this._setFeedTab('tasks', acc, fg));
+        this._notifTabBtn.connect('clicked', () => this._setFeedTab('notifications'));
+        this._taskTabBtn.connect('clicked', () => this._setFeedTab('tasks'));
         segBox.add_child(this._notifTabBtn);
         segBox.add_child(this._taskTabBtn);
         header.add_child(segBox);
@@ -888,7 +994,7 @@ export class HomeTab {
         });
         header.add_child(this._notifCountPill);
 
-        const pendingTasks = this._scratchTasks.filter(t => !t.done).length;
+        const pendingTasks = this._scratchpad.getPendingCount();
         this._scratchCountPill = new St.Label({
             text: String(pendingTasks),
             style_class: 'bayisland-count-pill',
@@ -949,11 +1055,10 @@ export class HomeTab {
             style_class: 'bayisland-mini-pill-btn',
             reactive: true,
             can_focus: false,
-            visible: this._activeFeedTab === 'tasks' && this._scratchTasks.some(t => t.done),
+            visible: this._activeFeedTab === 'tasks' && this._scratchpad.hasDoneTasks(),
         });
         this._clearTasksBtn.connect('clicked', () => {
-            this._scratchTasks = this._scratchTasks.filter(t => !t.done);
-            this._saveScratchpadTasks();
+            this._scratchpad.clearDone();
             this._populateScratchpad();
         });
         header.add_child(this._clearTasksBtn);
@@ -972,11 +1077,19 @@ export class HomeTab {
             if (sym === Clutter.KEY_Return || sym === Clutter.KEY_KP_Enter) {
                 const text = (this._scratchEntry.get_text() || '').trim();
                 if (text) {
-                    this._scratchTasks.unshift({ id: Date.now(), text, done: false });
-                    this._saveScratchpadTasks();
+                    this._scratchpad.addTask(text);
                     this._scratchEntry.set_text('');
                     this._populateScratchpad();
                 }
+                return Clutter.EVENT_STOP;
+            }
+            if (sym === Clutter.KEY_Escape) {
+                if (this._scratchEntry.get_text()) {
+                    this._scratchEntry.set_text('');
+                    return Clutter.EVENT_STOP;
+                }
+                global.stage.set_key_focus(null);
+                this._cb.onReleaseTextModal?.();
                 return Clutter.EVENT_STOP;
             }
             return Clutter.EVENT_PROPAGATE;
@@ -1361,19 +1474,39 @@ export class HomeTab {
         }
     }
 
-    updateInPlace(model) {
+    updateInPlace(model, palette = null) {
         if (!this._root)
             return false;
+        if (palette)
+            this._lastPalette = palette;
         const t = model.persistent?.timer;
-        if (this._timerValueLabel && t?.active) {
-            this._timerValueLabel.text = formatClock(t.remainingSec ?? 0);
+        const isAct = Boolean(t?.active);
+        if (this._timerActiveBtns)
+            this._timerActiveBtns.visible = isAct;
+        if (this._timerPresetBtns)
+            this._timerPresetBtns.visible = !isAct;
+
+        if (isAct) {
+            if (this._timerValueLabel)
+                this._timerValueLabel.text = formatClock(t.remainingSec ?? 0);
             if (this._timerSubLabel) {
                 const acc = this._lastPalette?.accentOnDarkCss || this._lastPalette?.accentCss || '#93c5fd';
                 this._timerSubLabel.text = `${t.label} • ${t.running ? 'Run' : 'Paused'}`;
                 this._timerSubLabel.style = t.running ? `color: ${acc}; font-weight: 700;` : null;
             }
-            if (this._timerToggleBtn)
+            if (this._timerToggleBtn) {
+                const acc = this._lastPalette?.accentCss || '#93c5fd';
+                const fg = this._lastPalette?.accentFgCss || '#090d16';
                 this._timerToggleBtn.label = t.running ? 'Pause' : 'Resume';
+                this._timerToggleBtn.style = `background-color: ${acc}; color: ${fg};`;
+            }
+        } else {
+            if (this._timerValueLabel)
+                this._timerValueLabel.text = '00:00';
+            if (this._timerSubLabel) {
+                this._timerSubLabel.text = 'Ready';
+                this._timerSubLabel.style = null;
+            }
         }
         return true;
     }
@@ -1408,8 +1541,21 @@ export class HomeTab {
         this._timerValueLabel = null;
         this._timerSubLabel = null;
         this._timerToggleBtn = null;
+        this._timerActiveBtns = null;
+        this._timerPresetBtns = null;
+        this._timerActiveBtns = null;
+        this._timerPresetBtns = null;
         this._qaHintLabel = null;
         this._quickBtns = {};
+        this._brightRow = null;
+        this._brightTrack = null;
+        this._brightFill = null;
+        this._brightPctLbl = null;
+        this._brightRow = null;
+        this._brightTrack = null;
+        this._brightFill = null;
+        this._brightPctLbl = null;
+        this._lastBrightFrac = 0;
         this._feedBox = null;
         this._notifCountPill = null;
         this._clearAllBtn = null;
@@ -1422,6 +1568,13 @@ export class HomeTab {
 
     disposePermanent() {
         this.destroy();
+        if (this._scratchpad && this._scratchpadSigId) {
+            try { this._scratchpad.disconnect(this._scratchpadSigId); } catch {}
+            this._scratchpadSigId = 0;
+        }
+        this._scratchpad?.destroy();
+        this._scratchpad = null;
+
         if (this._calendar) {
             if (this._calDateSigId) {
                 try { this._calendar.disconnect(this._calDateSigId); } catch {}

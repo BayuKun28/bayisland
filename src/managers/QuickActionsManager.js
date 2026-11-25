@@ -150,6 +150,7 @@ export class QuickActionsManager extends Signals.EventEmitter {
         this._openPrefs = openPrefs;
 
         this._enabled = false;
+        this._destroyed = false;
         this._cancellable = new Gio.Cancellable();
 
         // Wi-Fi (NetworkManager)
@@ -157,6 +158,7 @@ export class QuickActionsManager extends Signals.EventEmitter {
         this._nmIds = [];
         this._wifiDev = null;
         this._wifiDevIds = [];
+        this._wifiSyncPendingId = 0;
 
         // Bluetooth
         this._btClient = null;
@@ -207,6 +209,7 @@ export class QuickActionsManager extends Signals.EventEmitter {
             volumeFraction: 0,
             volumeMuted: false,
             micMuted: false,
+            brightnessFraction: null,
             outputs: [],
             activeOutputId: null,
         };
@@ -239,7 +242,6 @@ export class QuickActionsManager extends Signals.EventEmitter {
         if (!this._nmClient || !this._state.wifiHardwareEnabled)
             return;
         this._nmClient.wireless_enabled = !this._nmClient.wireless_enabled;
-        this._syncWifi();
     }
 
     toggleBluetooth() {
@@ -425,6 +427,8 @@ export class QuickActionsManager extends Signals.EventEmitter {
     setBrightnessFraction(fraction) {
         const clamped = Math.max(0, Math.min(1, fraction));
         const percentage = Math.round(clamped * 100);
+        this._state.brightnessFraction = clamped;
+        this._emitChanged();
         try {
             Gio.DBus.session.call(
                 'org.gnome.SettingsDaemon.Power',
@@ -445,6 +449,92 @@ export class QuickActionsManager extends Signals.EventEmitter {
         } catch {}
     }
 
+    _initBrightness() {
+        const updateFromPct = pct => {
+            if (!Number.isFinite(pct) || pct < 0 || pct > 100)
+                return;
+            const next = pct / 100;
+            if (this._state.brightnessFraction !== next) {
+                this._state.brightnessFraction = next;
+                this._emitChanged();
+            }
+        };
+
+        try {
+            Gio.DBus.session.call(
+                'org.gnome.SettingsDaemon.Power',
+                '/org/gnome/SettingsDaemon/Power',
+                'org.freedesktop.DBus.Properties',
+                'Get',
+                new GLib.Variant('(ss)', ['org.gnome.SettingsDaemon.Power.Screen', 'Brightness']),
+                new GLib.VariantType('(v)'),
+                Gio.DBusCallFlags.NONE,
+                1000,
+                this._cancellable,
+                (conn, res) => {
+                    try {
+                        const out = conn.call_finish(res);
+                        const val = out?.recursiveUnpack?.()[0];
+                        if (typeof val === 'number' && val >= 0) {
+                            updateFromPct(val);
+                            return;
+                        }
+                    } catch {}
+                    this._readSysfsBacklightFallback(updateFromPct);
+                }
+            );
+            this._signals.subscribeDBus(
+                Gio.DBus.session,
+                'org.gnome.SettingsDaemon.Power',
+                'org.freedesktop.DBus.Properties',
+                'PropertiesChanged',
+                '/org/gnome/SettingsDaemon/Power',
+                'org.gnome.SettingsDaemon.Power.Screen',
+                Gio.DBusSignalFlags.NONE,
+                (_c, _s, _o, _i, _sig, params) => {
+                    try {
+                        const [, changed] = params.deepUnpack();
+                        const b = changed?.Brightness?.deepUnpack?.() ?? changed?.Brightness;
+                        if (typeof b === 'number')
+                            updateFromPct(b);
+                    } catch {}
+                }
+            );
+        } catch {}
+    }
+
+    _readSysfsBacklightFallback(onPct) {
+        try {
+            const dir = Gio.File.new_for_path('/sys/class/backlight');
+            if (!dir.query_exists(null))
+                return;
+            const en = dir.enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
+            const info = en.next_file(null);
+            en.close(null);
+            if (!info)
+                return;
+            const base = `/sys/class/backlight/${info.get_name()}`;
+            const curFile = Gio.File.new_for_path(`${base}/brightness`);
+            const maxFile = Gio.File.new_for_path(`${base}/max_brightness`);
+            curFile.load_contents_async(this._cancellable, (f1, r1) => {
+                try {
+                    const [ok1, b1] = f1.load_contents_finish(r1);
+                    if (!ok1) return;
+                    const cur = Number.parseInt(new TextDecoder().decode(b1).trim(), 10);
+                    maxFile.load_contents_async(this._cancellable, (f2, r2) => {
+                        try {
+                            const [ok2, b2] = f2.load_contents_finish(r2);
+                            if (!ok2) return;
+                            const max = Number.parseInt(new TextDecoder().decode(b2).trim(), 10);
+                            if (Number.isFinite(cur) && Number.isFinite(max) && max > 0)
+                                onPct(Math.round((cur / max) * 100));
+                        } catch {}
+                    });
+                } catch {}
+            });
+        } catch {}
+    }
+
     toggleMicMute() {
         if (!this._defaultSource)
             return;
@@ -460,11 +550,13 @@ export class QuickActionsManager extends Signals.EventEmitter {
     }
 
     _start() {
+        this._destroyed = false;
         this._cancellable = new Gio.Cancellable();
         this._initGSettings();
         this._initWifi();
         this._initBluetooth();
         this._initAudio();
+        this._initBrightness();
     }
 
     _initGSettings() {
@@ -497,17 +589,17 @@ export class QuickActionsManager extends Signals.EventEmitter {
             NM.Client.new_async(this._cancellable, (_obj, res) => {
                 try {
                     const client = NM.Client.new_finish(res);
-                    if (!this._enabled)
+                    if (!this._enabled || this._destroyed)
                         return;
                     this._nmClient = client;
                     this._nmIds.push(
-                        client.connect('notify::wireless-enabled', () => this._syncWifi()),
-                        client.connect('notify::wireless-hardware-enabled', () => this._syncWifi()),
-                        client.connect('notify::active-connections', () => this._syncWifi()),
-                        client.connect('device-added', () => this._syncWifi()),
-                        client.connect('device-removed', () => this._syncWifi())
+                        client.connect('notify::wireless-enabled', () => this._scheduleWifiSync()),
+                        client.connect('notify::wireless-hardware-enabled', () => this._scheduleWifiSync()),
+                        client.connect('notify::active-connections', () => this._scheduleWifiSync()),
+                        client.connect('device-added', () => this._scheduleWifiSync()),
+                        client.connect('device-removed', () => this._scheduleWifiSync())
                     );
-                    this._syncWifi();
+                    this._scheduleWifiSync();
                 } catch {
                     // NM absent or cancelled
                 }
@@ -517,26 +609,44 @@ export class QuickActionsManager extends Signals.EventEmitter {
         }
     }
 
-    _syncWifi() {
-        if (!this._nmClient)
+    _scheduleWifiSync() {
+        if (!this._enabled || this._destroyed)
+            return;
+        if (this._wifiSyncPendingId)
+            return;
+        this._wifiSyncPendingId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            this._wifiSyncPendingId = 0;
+            if (this._enabled && !this._destroyed)
+                this._syncWifi();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _setupWifiDevice(wifiDev) {
+        if (this._wifiDev === wifiDev)
             return;
 
         for (const id of this._wifiDevIds) {
             try { this._wifiDev?.disconnect(id); } catch {}
         }
         this._wifiDevIds = [];
-        this._wifiDev = null;
-
-        const devices = this._nmClient.get_devices?.() ?? [];
-        const wifiDev = devices.find(d => d.get_device_type?.() === NM.DeviceType.WIFI) ?? null;
         this._wifiDev = wifiDev;
 
         if (wifiDev) {
             this._wifiDevIds.push(
-                wifiDev.connect('notify::active-access-point', () => this._syncWifi()),
-                wifiDev.connect('notify::state', () => this._syncWifi())
+                wifiDev.connect('notify::active-access-point', () => this._scheduleWifiSync()),
+                wifiDev.connect('notify::state', () => this._scheduleWifiSync())
             );
         }
+    }
+
+    _syncWifi() {
+        if (!this._nmClient || !this._enabled || this._destroyed)
+            return;
+
+        const devices = this._nmClient.get_devices?.() ?? [];
+        const wifiDev = devices.find(d => d.get_device_type?.() === NM.DeviceType.WIFI) ?? null;
+        this._setupWifiDevice(wifiDev);
 
         let ssid = '';
         try {
@@ -548,10 +658,24 @@ export class QuickActionsManager extends Signals.EventEmitter {
             ssid = '';
         }
 
-        this._state.wifiAvailable = Boolean(wifiDev);
-        this._state.wifiEnabled = Boolean(this._nmClient.wireless_enabled);
-        this._state.wifiHardwareEnabled = Boolean(this._nmClient.wireless_hardware_enabled);
-        this._state.wifiSsid = ssid;
+        const nextAvailable = Boolean(wifiDev);
+        const nextEnabled = Boolean(this._nmClient.wireless_enabled);
+        const nextHwEnabled = Boolean(this._nmClient.wireless_hardware_enabled);
+        const nextSsid = ssid;
+
+        const changed =
+            this._state.wifiAvailable !== nextAvailable ||
+            this._state.wifiEnabled !== nextEnabled ||
+            this._state.wifiHardwareEnabled !== nextHwEnabled ||
+            this._state.wifiSsid !== nextSsid;
+
+        if (!changed)
+            return;
+
+        this._state.wifiAvailable = nextAvailable;
+        this._state.wifiEnabled = nextEnabled;
+        this._state.wifiHardwareEnabled = nextHwEnabled;
+        this._state.wifiSsid = nextSsid;
         this._emitChanged();
     }
 
@@ -615,7 +739,11 @@ export class QuickActionsManager extends Signals.EventEmitter {
 
                 if (addr && !this._btDeviceSigIds.has(addr)) {
                     const sid = dev.connect('notify::connected', () => this._syncBluetooth());
-                    this._btDeviceSigIds.set(addr, { dev, sid });
+                    const batSid = dev.connect('notify::battery-percentage', () => {
+                        if (dev.connected)
+                            this._checkAndNotifyBtAccessory(dev, true);
+                    });
+                    this._btDeviceSigIds.set(addr, { dev, sid, batSid });
                 }
 
                 if (dev.connected) {
@@ -632,9 +760,10 @@ export class QuickActionsManager extends Signals.EventEmitter {
             }
 
             // Prune un-paired/removed devices from signal registry
-            for (const [addr, { dev, sid }] of this._btDeviceSigIds.entries()) {
+            for (const [addr, { dev, sid, batSid }] of this._btDeviceSigIds.entries()) {
                 if (!seenAddresses.has(addr)) {
                     try { dev?.disconnect(sid); } catch {}
+                    try { if (batSid) dev?.disconnect(batSid); } catch {}
                     this._btDeviceSigIds.delete(addr);
                 }
             }
@@ -650,7 +779,7 @@ export class QuickActionsManager extends Signals.EventEmitter {
         this._emitChanged();
     }
 
-    _checkAndNotifyBtAccessory(dev) {
+    _checkAndNotifyBtAccessory(dev, isBatteryUpdate = false) {
         if (!this._accessoryAlertsEnabled || !this._priority)
             return;
 
@@ -659,12 +788,39 @@ export class QuickActionsManager extends Signals.EventEmitter {
         const name = (dev.alias || dev.name || '').trim();
         const nameLower = name.toLowerCase();
 
-        // Audio devices: HEADSET (32), HEADPHONES (64), OTHER_AUDIO (128) or audio icon or known audio names
-        const isAudioType = devType === 32 || devType === 64 || devType === 128 ||
-            icon.includes('audio') || icon.includes('headset') || icon.includes('headphones');
-        const isAudioName = /buds|airpods|freebuds|earfun|soundcore|tws|wireless|wh-|wf-|headphone|headset|iem/i.test(nameLower);
+        // Detect accessory category and choose appropriate icon and label
+        let category = null;
+        let iconName = 'bluetooth-active-symbolic';
+        let typeLabel = 'Device';
 
-        if (!isAudioType && !isAudioName)
+        const isMouse = devType === 256 || icon.includes('mouse') || /mouse/i.test(nameLower);
+        const isKeyboard = devType === 512 || icon.includes('keyboard') || /keyboard/i.test(nameLower);
+        const isGamepad = devType === 1024 || icon.includes('gamepad') || icon.includes('gaming') || icon.includes('joystick') || /gamepad|controller|dualsense|dualshock|xbox/i.test(nameLower);
+        const isAudio = devType === 32 || devType === 64 || devType === 128 ||
+            icon.includes('audio') || icon.includes('headset') || icon.includes('headphones') ||
+            /buds|airpods|freebuds|earfun|soundcore|tws|wireless|wh-|wf-|headphone|headset|iem/i.test(nameLower);
+
+        if (isAudio) {
+            category = 'audio';
+            const isTws = /buds|airpods|freebuds|earfun|soundcore|tws|wireless/i.test(nameLower) ||
+                /buds|airpods|freebuds|earfun|soundcore|tws|wireless/i.test(icon);
+            iconName = isTws ? 'audio-headset-symbolic' : 'audio-headphones-symbolic';
+            typeLabel = isTws ? 'TWS' : 'Headphones';
+        } else if (isMouse) {
+            category = 'mouse';
+            iconName = 'input-mouse-symbolic';
+            typeLabel = 'Mouse';
+        } else if (isKeyboard) {
+            category = 'keyboard';
+            iconName = 'input-keyboard-symbolic';
+            typeLabel = 'Keyboard';
+        } else if (isGamepad) {
+            category = 'gamepad';
+            iconName = 'input-gaming-symbolic';
+            typeLabel = 'Controller';
+        }
+
+        if (!category)
             return;
 
         const addr = dev.address || name;
@@ -673,32 +829,48 @@ export class QuickActionsManager extends Signals.EventEmitter {
             this._lastAlertTime.get(addr) || 0,
             name ? (this._lastAlertTime.get(name) || 0) : 0
         );
-        if ((now - last) < 4000000)
-            return;
-        this._lastAlertTime.set(addr, now);
-        if (name)
-            this._lastAlertTime.set(name, now);
+
+        if (isBatteryUpdate) {
+            // Only coalesce-update if alert was recently shown (within 10s)
+            if (last === 0 || (now - last) > 10000000)
+                return;
+        } else {
+            if ((now - last) < 4000000)
+                return;
+            this._lastAlertTime.set(addr, now);
+            if (name)
+                this._lastAlertTime.set(name, now);
+        }
 
         const batteryPct = Math.round(Number(dev.battery_percentage) || 0);
-        const body = (batteryPct > 0 && batteryPct <= 100)
-            ? `TWS Connected • ${batteryPct}% Battery`
-            : 'TWS Connected • Bluetooth Audio';
+        let body;
+        if (category === 'audio') {
+            body = (batteryPct > 0 && batteryPct <= 100)
+                ? `${typeLabel} Connected • 🔋 ${batteryPct}%`
+                : `${typeLabel} Connected • Bluetooth Audio`;
+        } else {
+            body = (batteryPct > 0 && batteryPct <= 100)
+                ? `Connected • 🔋 ${batteryPct}%`
+                : `Connected • Bluetooth ${typeLabel}`;
+        }
 
         this._priority.pushTransient({
             kind: 'accessory',
             weight: Weights.ACCESSORY,
             coalesceKey: `accessory-bt-${addr}`,
-            title: name || 'Bluetooth Audio',
+            title: name || `Bluetooth ${typeLabel}`,
             body,
-            icon: new Gio.ThemedIcon({ name: 'audio-headset-symbolic' }),
-            iconName: 'audio-headset-symbolic',
+            icon: new Gio.ThemedIcon({ name: iconName }),
+            iconName,
             iconColor: '#38bdf8',
             durationMs: 3600,
             onActivate: () => {
-                this._priority.expand('media');
+                if (category === 'audio')
+                    this._priority.expand('media');
             },
             onClick: () => {
-                this._priority.expand('media');
+                if (category === 'audio')
+                    this._priority.expand('media');
             },
         });
     }
@@ -850,7 +1022,6 @@ export class QuickActionsManager extends Signals.EventEmitter {
 
         if (prevId && prevId !== id) {
             this._lastAlertTime.delete(prevId);
-            this._lastAlertTime.delete(id);
         }
 
         if (this._bootstrapped && id !== prevId) {
@@ -873,8 +1044,14 @@ export class QuickActionsManager extends Signals.EventEmitter {
         if (!classification)
             return;
 
-        const origin = (dev.get_origin?.() || '').trim();
-        const desc = (dev.get_description?.() || '').trim();
+        const origin = (dev.get_origin?.() || '').trim().toLowerCase();
+        const desc = (dev.get_description?.() || '').trim().toLowerCase();
+
+        // Bluetooth audio accessories are handled authoritatively with battery telemetry by GnomeBluetooth
+        if (classification.type === 'tws' || origin.includes('bluez') || origin.includes('bluetooth') || desc.includes('bluetooth')) {
+            if (this._btClient)
+                return;
+        }
 
         const now = GLib.get_monotonic_time();
         const last = Math.max(
@@ -933,7 +1110,6 @@ export class QuickActionsManager extends Signals.EventEmitter {
                 const newId = activeDev.get_id();
                 this._activeOutputId = newId;
                 if (this._bootstrapped && prevId !== null && prevId !== newId) {
-                    this._lastAlertTime.delete(newId);
                     this._checkAndNotifyAccessory(activeDev);
                 }
             }
@@ -1002,10 +1178,20 @@ export class QuickActionsManager extends Signals.EventEmitter {
     }
 
     _emitChanged() {
+        if (!this._enabled || this._destroyed)
+            return;
         this.emit('changed', this.getSnapshot());
     }
 
     _stop() {
+        this._enabled = false;
+        this._destroyed = true;
+
+        if (this._wifiSyncPendingId) {
+            try { GLib.source_remove(this._wifiSyncPendingId); } catch {}
+            this._wifiSyncPendingId = 0;
+        }
+
         this._cancellable?.cancel();
 
         if (this._inhibitCookie) {
@@ -1050,8 +1236,9 @@ export class QuickActionsManager extends Signals.EventEmitter {
         }
         this._btIds = [];
 
-        for (const { dev, sid } of this._btDeviceSigIds.values()) {
+        for (const { dev, sid, batSid } of this._btDeviceSigIds.values()) {
             try { dev?.disconnect(sid); } catch {}
+            try { if (batSid) dev?.disconnect(batSid); } catch {}
         }
         this._btDeviceSigIds.clear();
         this._btConnectedAddresses.clear();

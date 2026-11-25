@@ -4,6 +4,7 @@ import Shell from 'gi://Shell';
 
 import { IslandState } from '../core/PriorityManager.js';
 import { ArtCache } from '../utils/ArtCache.js';
+import { sanitizeSingleLine } from '../utils/Formatters.js';
 
 const DBUS_BUS = 'org.freedesktop.DBus';
 const DBUS_PATH = '/org/freedesktop/DBus';
@@ -323,14 +324,16 @@ export class MprisManager {
         for (const k of Object.keys(rawMeta))
             meta[k] = rawMeta[k]?.deepUnpack ? rawMeta[k].deepUnpack() : rawMeta[k];
 
-        entry.title = typeof meta['xesam:title'] === 'string' && meta['xesam:title']
+        const rawTitle = typeof meta['xesam:title'] === 'string' && meta['xesam:title']
             ? meta['xesam:title']
             : entry.identity;
+        entry.title = sanitizeSingleLine(rawTitle) || entry.identity;
 
         const artists = meta['xesam:artist'];
-        entry.artist = Array.isArray(artists) && artists.length > 0
+        const rawArtist = Array.isArray(artists) && artists.length > 0
             ? artists.filter(Boolean).join(', ')
             : entry.identity;
+        entry.artist = sanitizeSingleLine(rawArtist) || entry.identity;
 
         entry.artUrl = typeof meta['mpris:artUrl'] === 'string' ? meta['mpris:artUrl'] : '';
         entry.trackId = typeof meta['mpris:trackid'] === 'string' ? meta['mpris:trackid'] : '';

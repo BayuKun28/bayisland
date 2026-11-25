@@ -576,6 +576,11 @@ export class TransientView {
                     return Clutter.EVENT_STOP;
                 });
 
+                track.connect('leave-event', () => {
+                    dragging = false;
+                    return Clutter.EVENT_PROPAGATE;
+                });
+
                 track.connect('scroll-event', (_actor, event) => {
                     const dir = event.get_scroll_direction();
                     let delta = 0;

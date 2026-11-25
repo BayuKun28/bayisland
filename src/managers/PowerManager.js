@@ -221,7 +221,7 @@ export class PowerManager {
                     weight: Weights.ALARM,
                     coalesceKey: 'power-low',
                     title: `Critical Battery (${pct}%)`,
-                    body: 'Connect ThinkPad USB-C charger soon',
+                    body: 'Connect power adapter soon',
                     iconName: 'battery-caution-symbolic',
                     iconColor: '#ef4444',
                     badgeText: 'LOW',

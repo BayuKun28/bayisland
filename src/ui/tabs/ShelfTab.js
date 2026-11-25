@@ -245,11 +245,10 @@ export class ShelfTab {
         return row;
     }
 
-    getBridgeRegion(shellX, shellY, shellW, shellH = 310) {
-        // Aligned with ExpandedView padding (14,16) + unified header (36) + root spacing (10) = headerOffset 60
+    getBridgeRegion(shellX, shellY, shellW, shellH = 310, headerOffset = 60) {
+        // Aligned with ExpandedView padding (14,16) + unified header (36) + root spacing (10) + optional runner
         // Empty state: dropzone spans full body above footer; Populated: 64px top dropzone + 8px gap + rows
         const padX = 16;
-        const headerOffset = 60;
         const footerReserve = 48;
         const bodyWidth = Math.max(240, shellW - padX * 2);
 
