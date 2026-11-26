@@ -42,6 +42,7 @@ export class ExpandedView {
 
         // Quick Runner
         this._runnerEnabled = true;
+        this._homeBrightnessEnabled = false;
         this._runner = new CommandRunnerManager();
         this._runnerBar = null;
         this._runnerEntry = null;
@@ -86,20 +87,43 @@ export class ExpandedView {
             break;
         }
         case 'home':
-        default:
-            targetH = 396;
+        default: {
+            const hasBrightData = snapshots?.quickActions?.brightnessFraction !== null &&
+                snapshots?.quickActions?.brightnessFraction !== undefined;
+            const showBright = this._homeTab?.isBrightnessRowVisible?.() ||
+                (this._homeBrightnessEnabled && hasBrightData);
+            targetH = showBright ? 438 : 408;
             break;
         }
+        }
 
-        if (!this._runnerEnabled)
-            targetH = Math.max(260, targetH - 38);
-        else if (this._runnerOutputDrawer?.visible)
-            targetH += Math.max(76, Math.round(this._runnerOutputDrawer.height || 100)) + 10;
+        const runnerExtraH = this._runnerEnabled
+            ? (this._runnerOutputDrawer?.visible
+                ? (Math.max(76, Math.round(this._runnerOutputDrawer.height || 100)) + 10)
+                : 0)
+            : -42;
+        targetH = Math.max(260, targetH + runnerExtraH);
+
+        if (tab === 'home' && this._currentTabId === 'home') {
+            const bodyChild = this._bodyBin?.get_first_child?.();
+            if (bodyChild) {
+                const bodyW = Math.max(320, width - 32);
+                const [minBodyH] = bodyChild.get_preferred_height(bodyW);
+                const chromeH = 74 + (this._runnerEnabled ? 42 : 0) + (runnerExtraH > 0 ? runnerExtraH : 0);
+                targetH = Math.max(targetH, Math.ceil(minBodyH) + chromeH);
+            }
+        }
 
         return {
             width,
             height: Math.min(maxH, targetH),
         };
+    }
+
+    setHomeBrightnessEnabled(enabled) {
+        const next = Boolean(enabled);
+        this._homeBrightnessEnabled = next;
+        return this._homeTab?.setBrightnessSliderEnabled(next) ?? false;
     }
 
     setCommandRunnerEnabled(enabled) {
@@ -127,6 +151,18 @@ export class ExpandedView {
 
     isRunnerFocused() {
         return Boolean(this._runnerEntry?.clutter_text?.has_focus);
+    }
+
+    isClipboardSearchFocused() {
+        return Boolean(this._clipboardTab?.isSearchFocused?.());
+    }
+
+    focusClipboardSearch() {
+        return Boolean(this._clipboardTab?.focusSearch?.());
+    }
+
+    handleClipboardKeyPress(sym) {
+        return Boolean(this._clipboardTab?.handleKeySymbol?.(sym));
     }
 
     hasRoot() {
@@ -691,6 +727,11 @@ export class ExpandedView {
         }
 
         this._bodyBin?.set_child(child);
+        if (tab === 'clipboard') {
+            if (!this.isRunnerFocused())
+                global.stage?.set_key_focus?.(null);
+            this._clipboardTab.resetSelection();
+        }
     }
 
     switchTab(nextTab, model, palette, snapshots) {

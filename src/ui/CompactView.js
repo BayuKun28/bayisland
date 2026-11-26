@@ -54,6 +54,7 @@ export class CompactView {
         this._taskTimerLabel = null;
         this._eqBars = [];
 
+        this._idleBar = null;
         this._idleUnreadDot = null;
         this._peekDateLabel = null;
         this._peekDateSep = null;
@@ -187,8 +188,12 @@ export class CompactView {
             return false;
 
         if (model.state === IslandState.IDLE_BAR && this._currentPrimary === 'idle-bar') {
+            const hasNotifs = (model.meta?.unreadNotifs ?? 0) > 0;
+            const hideVisual = this._shouldHideIdleVisual(model);
+            if (this._idleBar)
+                this._idleBar.opacity = hideVisual ? 0 : 255;
             if (this._idleUnreadDot)
-                this._idleUnreadDot.visible = (model.meta?.unreadNotifs ?? 0) > 0;
+                this._idleUnreadDot.visible = hasNotifs && !hideVisual;
             return true;
         }
 
@@ -419,6 +424,7 @@ export class CompactView {
         this._recTimerLabel = null;
         this._taskCmdLabel = null;
         this._taskTimerLabel = null;
+        this._idleBar = null;
         this._idleUnreadDot = null;
         this._peekDateLabel = null;
         this._peekDateSep = null;
@@ -441,6 +447,18 @@ export class CompactView {
         this._dropSubLabel = null;
     }
 
+    _shouldHideIdleVisual(model) {
+        if (!model || model.state !== IslandState.IDLE_BAR)
+            return false;
+        if (!model.inFullscreen || model.idleHandleFullscreenMode !== 'hover-only')
+            return false;
+        if ((model.meta?.unreadNotifs ?? 0) > 0)
+            return false;
+        if (!model.idleHoverPeek && model.hovered)
+            return false;
+        return true;
+    }
+
     _renderIdleBar(model, palette) {
         this._resetRefs();
         this._currentPrimary = 'idle-bar';
@@ -456,10 +474,13 @@ export class CompactView {
         });
 
         const hasNotifs = (model.meta?.unreadNotifs ?? 0) > 0;
+        const hideVisual = this._shouldHideIdleVisual(model);
         const bar = new St.Widget({
             style_class: 'bayisland-idle-handle-bar',
             y_align: Clutter.ActorAlign.CENTER,
+            opacity: hideVisual ? 0 : 255,
         });
+        this._idleBar = bar;
         wrap.add_child(bar);
 
         this._idleUnreadDot = new St.Widget({
@@ -468,7 +489,7 @@ export class CompactView {
             ...(palette?.accentOnDarkCss || palette?.accentCss
                 ? { style: `background-color: ${palette.accentOnDarkCss || palette.accentCss};` }
                 : {}),
-            visible: hasNotifs,
+            visible: hasNotifs && !hideVisual,
         });
         wrap.add_child(this._idleUnreadDot);
 

@@ -21,6 +21,7 @@ export class ClipboardTab {
     constructor({ callbacks }) {
         this._cb = callbacks;
         this._root = null;
+        this._scroll = null;
         this._listBox = null;
         this._searchEntry = null;
         this._allFilterBtn = null;
@@ -71,39 +72,22 @@ export class ClipboardTab {
         });
         this._searchEntry.clutter_text.connect('text-changed', () => {
             this._query = this._searchEntry?.get_text() || '';
-            this._populateList();
+            this._populateList({ resetSelection: true });
         });
         this._searchEntry.clutter_text.connect('key-press-event', (_actor, event) => {
             const sym = event.get_key_symbol();
-            if (sym === Clutter.KEY_Down) {
-                if (this._filteredItems.length > 0) {
-                    this._selectedIdx = Math.min(this._filteredItems.length - 1, this._selectedIdx + 1);
-                    this._syncRowHighlight();
-                }
+            if (this.handleKeySymbol(sym))
                 return Clutter.EVENT_STOP;
-            }
-            if (sym === Clutter.KEY_Up) {
-                if (this._filteredItems.length > 0) {
-                    this._selectedIdx = Math.max(0, this._selectedIdx - 1);
-                    this._syncRowHighlight();
-                }
-                return Clutter.EVENT_STOP;
-            }
-            if (sym === Clutter.KEY_Return || sym === Clutter.KEY_KP_Enter) {
-                const target = this._filteredItems[this._selectedIdx] || this._firstFilteredItem;
-                if (target) {
-                    this._cb.onReleaseTextModal?.();
-                    this._cb.onClipActivate?.(target.id, null);
-                    return Clutter.EVENT_STOP;
-                }
-            } else if (sym === Clutter.KEY_Escape) {
+            if (sym === Clutter.KEY_Escape) {
                 if (this._query) {
                     this._query = '';
                     this._searchEntry.set_text('');
-                    this._populateList();
+                    this._populateList({ resetSelection: true });
                     return Clutter.EVENT_STOP;
                 }
+                global.stage?.set_key_focus?.(null);
                 this._cb.onReleaseTextModal?.();
+                return Clutter.EVENT_STOP;
             }
             return Clutter.EVENT_PROPAGATE;
         });
@@ -146,7 +130,7 @@ export class ClipboardTab {
                 this._pinFilterBtn.style_class = `bayisland-clip-seg-btn${pinnedOnly ? ' bayisland-clip-seg-btn-active' : ''}`;
                 this._pinFilterBtn.style = pinnedOnly ? `background-color: ${curAcc}; color: ${curFg};` : null;
             }
-            this._populateList();
+            this._populateList({ resetSelection: true });
         };
         this._allFilterBtn.connect('clicked', () => updateFilterSwitch(false));
         this._pinFilterBtn.connect('clicked', () => updateFilterSwitch(true));
@@ -198,6 +182,7 @@ export class ClipboardTab {
             x_expand: true,
             y_expand: true,
         });
+        this._scroll = scroll;
         this._listBox = new St.BoxLayout({
             vertical: true,
             x_expand: true,
@@ -206,9 +191,58 @@ export class ClipboardTab {
         scroll.child = this._listBox;
         root.add_child(scroll);
 
-        this._populateList();
+        this._populateList({ resetSelection: true });
         this._root = root;
         return root;
+    }
+
+    isSearchFocused() {
+        return Boolean(this._searchEntry?.clutter_text?.has_focus);
+    }
+
+    focusSearch() {
+        if (!this._searchEntry)
+            return false;
+        try {
+            this._cb.onAcquireTextModal?.(this._searchEntry);
+            this._searchEntry.grab_key_focus?.();
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    resetSelection() {
+        this._selectedIdx = 0;
+        const adj = this._scroll?.vscroll?.adjustment ?? this._scroll?.get_vscroll_bar?.()?.get_adjustment?.();
+        if (adj)
+            adj.value = 0;
+        this._syncRowHighlight();
+    }
+
+    handleKeySymbol(sym) {
+        if (!this._root || this._filteredItems.length === 0)
+            return false;
+
+        if (sym === Clutter.KEY_Down) {
+            this._selectedIdx = Math.min(this._filteredItems.length - 1, this._selectedIdx + 1);
+            this._syncRowHighlight(true);
+            return true;
+        }
+        if (sym === Clutter.KEY_Up) {
+            this._selectedIdx = Math.max(0, this._selectedIdx - 1);
+            this._syncRowHighlight(true);
+            return true;
+        }
+        if (sym === Clutter.KEY_Return || sym === Clutter.KEY_KP_Enter) {
+            const target = this._filteredItems[this._selectedIdx] || this._firstFilteredItem;
+            if (target) {
+                this._cb.onReleaseTextModal?.();
+                this._cb.onClipActivate?.(target.id, null);
+                return true;
+            }
+        }
+        return false;
     }
 
     updateSnapshot(clipSnapshot, palette) {
@@ -234,7 +268,7 @@ export class ClipboardTab {
             this._populateList();
     }
 
-    _populateList() {
+    _populateList({ resetSelection = false } = {}) {
         if (!this._listBox)
             return;
         this._listBox.destroy_all_children();
@@ -257,7 +291,9 @@ export class ClipboardTab {
         this._firstFilteredItem = items[0] || null;
         this._filteredItems = items.slice(0, 40);
         this._rowNodes = [];
-        this._selectedIdx = 0;
+        this._selectedIdx = resetSelection
+            ? 0
+            : Math.min(Math.max(0, this._selectedIdx), Math.max(0, this._filteredItems.length - 1));
 
         if (items.length === 0) {
             this._listBox.add_child(this._emptyState(
@@ -274,16 +310,35 @@ export class ClipboardTab {
         this._syncRowHighlight();
     }
 
-    _syncRowHighlight() {
+    _syncRowHighlight(scrollIntoView = false) {
         const acc = this._lastPalette?.accentCss || '#93c5fd';
         for (let i = 0; i < this._rowNodes.length; i++) {
             const row = this._rowNodes[i];
             if (!row)
                 continue;
-            row.style = i === this._selectedIdx && this._query.trim()
-                ? `spacing: 8px; border: 1px solid ${acc};`
+            row.style = i === this._selectedIdx
+                ? `spacing: 8px; border: 1px solid ${acc}; background-color: rgba(255, 255, 255, 0.085);`
                 : 'spacing: 8px;';
         }
+        if (scrollIntoView)
+            this._ensureSelectedVisible();
+    }
+
+    _ensureSelectedVisible() {
+        const row = this._rowNodes[this._selectedIdx];
+        const adj = this._scroll?.vscroll?.adjustment ?? this._scroll?.get_vscroll_bar?.()?.get_adjustment?.();
+        if (!row || !adj || adj.page_size <= 0)
+            return;
+
+        const top = row.y;
+        const bottom = top + row.height;
+        const pageTop = adj.value;
+        const pageBottom = pageTop + adj.page_size;
+
+        if (top < pageTop)
+            adj.value = Math.max(0, top - 4);
+        else if (bottom > pageBottom)
+            adj.value = Math.min(Math.max(0, adj.upper - adj.page_size), bottom - adj.page_size + 4);
     }
 
     _emptyState(text) {
@@ -457,6 +512,7 @@ export class ClipboardTab {
         this._pinFilterBtn = null;
         this._pauseBtn = null;
         this._modeBtn = null;
+        this._scroll = null;
         this._listBox = null;
         this._root = null;
     }

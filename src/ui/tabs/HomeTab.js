@@ -112,14 +112,10 @@ export class HomeTab {
         this._timerToggleBtn = null;
         this._timerActiveBtns = null;
         this._timerPresetBtns = null;
-        this._timerActiveBtns = null;
-        this._timerPresetBtns = null;
         this._qaHintLabel = null;
         this._quickBtns = {};
-        this._brightRow = null;
-        this._brightTrack = null;
-        this._brightFill = null;
-        this._brightPctLbl = null;
+        this._brightnessSliderEnabled = false;
+        this._hasBrightnessData = false;
         this._brightRow = null;
         this._brightTrack = null;
         this._brightFill = null;
@@ -157,6 +153,20 @@ export class HomeTab {
             this._cb.onTasksCountChanged?.(pendingInitial);
     }
 
+    setBrightnessSliderEnabled(enabled) {
+        const next = Boolean(enabled);
+        if (this._brightnessSliderEnabled === next)
+            return false;
+        this._brightnessSliderEnabled = next;
+        if (this._brightRow)
+            this._brightRow.visible = next && this._hasBrightnessData;
+        return true;
+    }
+
+    isBrightnessRowVisible() {
+        return Boolean(this._brightnessSliderEnabled && this._hasBrightnessData);
+    }
+
     render(model, palette, quickSnapshot, notifHistory) {
         this.destroy();
 
@@ -184,6 +194,8 @@ export class HomeTab {
         const heroRow = new St.BoxLayout({
             style_class: 'bayisland-home-hero',
             x_expand: true,
+            y_expand: true,
+            y_align: Clutter.ActorAlign.START,
         });
 
         const dateCol = new St.BoxLayout({
@@ -279,7 +291,6 @@ export class HomeTab {
         this._refreshAgenda();
         this._heroRow = heroRow;
         leftCol.add_child(heroRow);
-        leftCol.add_child(new St.Widget({ y_expand: true }));
 
         // 2. Hardware Quick Actions (6x1 Icon-Only Solid Active Squircles + Hover Label Hint)
         const qaCard = new St.BoxLayout({
@@ -393,12 +404,13 @@ export class HomeTab {
         qaCard.add_child(grid);
 
         const hasBright = qa.brightnessFraction !== null && qa.brightnessFraction !== undefined;
+        this._hasBrightnessData = hasBright;
         this._lastBrightFrac = hasBright ? Math.max(0, Math.min(1, qa.brightnessFraction)) : 0.5;
         this._brightRow = new St.BoxLayout({
             x_expand: true,
             style: 'spacing: 8px; margin-top: 2px;',
             y_align: Clutter.ActorAlign.CENTER,
-            visible: hasBright,
+            visible: this._brightnessSliderEnabled && hasBright,
         });
         this._brightRow.add_child(new St.Icon({
             icon_name: 'display-brightness-symbolic',
@@ -423,6 +435,13 @@ export class HomeTab {
             x_align: Clutter.ActorAlign.START,
         });
         this._brightTrack.add_child(this._brightFill);
+        this._brightTrack.connect('notify::allocation', () => {
+            if (!this._brightFill || !this._brightTrack)
+                return;
+            const tw = this._brightTrack.width;
+            if (tw > 20)
+                this._brightFill.width = Math.max(4, Math.round(tw * this._lastBrightFrac));
+        });
 
         let brightDragging = false;
         const applyBright = frac => {
@@ -684,7 +703,8 @@ export class HomeTab {
 
         if (this._brightRow) {
             const hasBright = qa.brightnessFraction !== null && qa.brightnessFraction !== undefined;
-            this._brightRow.visible = hasBright;
+            this._hasBrightnessData = hasBright;
+            this._brightRow.visible = this._brightnessSliderEnabled && hasBright;
             if (hasBright) {
                 const frac = Math.max(0, Math.min(1, qa.brightnessFraction));
                 this._lastBrightFrac = frac;
@@ -1543,14 +1563,9 @@ export class HomeTab {
         this._timerToggleBtn = null;
         this._timerActiveBtns = null;
         this._timerPresetBtns = null;
-        this._timerActiveBtns = null;
-        this._timerPresetBtns = null;
         this._qaHintLabel = null;
         this._quickBtns = {};
-        this._brightRow = null;
-        this._brightTrack = null;
-        this._brightFill = null;
-        this._brightPctLbl = null;
+        this._hasBrightnessData = false;
         this._brightRow = null;
         this._brightTrack = null;
         this._brightFill = null;

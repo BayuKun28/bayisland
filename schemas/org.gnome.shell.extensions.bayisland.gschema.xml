@@ -89,6 +89,12 @@
       <description>Display a pastel-blue pill line at top-center when idle so BayIsland stays visible and hoverable even when HideTopBar hides the Top Bar over maximized or fullscreen windows.</description>
     </key>
 
+    <key name="idle-handle-fullscreen-mode" type="s">
+      <default>'visible'</default>
+      <summary>Fullscreen Idle Handle Behavior</summary>
+      <description>Behavior of the idle pill line in fullscreen apps: 'visible' (always keep pill visible) or 'hover-only' (hide pill when no unread notifications, keep visible with dot if unread notifications exist, and reveal on hover).</description>
+    </key>
+
     <key name="idle-hover-peek" type="b">
       <default>true</default>
       <summary>Expand Idle Handle on Hover</summary>
@@ -267,6 +273,12 @@
       <default>true</default>
       <summary>Enable Quick Actions and Calendar Hub</summary>
       <description>Enable Clock, Calendar, Wi-Fi, Bluetooth, Night Light, DND, and Screenshot controls inside Home tab.</description>
+    </key>
+
+    <key name="enable-home-brightness-slider" type="b">
+      <default>false</default>
+      <summary>Show Brightness Slider in Home Quick Actions</summary>
+      <description>Display an inline screen brightness slider beneath the Quick Actions tiles on the Home tab.</description>
     </key>
 
     <key name="enable-command-runner" type="b">

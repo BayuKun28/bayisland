@@ -23,6 +23,19 @@ export function buildModulesPage(settings, cleanups) {
         'Quick Actions, Calendar and Audio Switcher',
         'Wi-Fi, Bluetooth, Night Light, DND, Screenshot, Keep Awake, Calendar agenda, and audio outputs.'
     ));
+    const homeBrightRow = bindSwitch(
+        settings,
+        'enable-home-brightness-slider',
+        'Home Quick Actions Brightness Slider',
+        'Show an inline screen brightness slider beneath the Quick Actions tiles on the Home tab.'
+    );
+    const syncQuickBrightSensitivity = () => {
+        homeBrightRow.sensitive = settings.get_boolean('enable-quick-actions');
+    };
+    syncQuickBrightSensitivity();
+    const sigQa = settings.connect('changed::enable-quick-actions', syncQuickBrightSensitivity);
+    cleanups.push(() => settings.disconnect(sigQa));
+    hubGroup.add(homeBrightRow);
     hubGroup.add(bindSwitch(
         settings,
         'enable-command-runner',

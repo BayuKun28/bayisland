@@ -145,6 +145,7 @@ export class PriorityManager extends Signals.EventEmitter {
         this._options = {
             showIdlePill: false,
             idleHandleEnabled: true,
+            idleHandleFullscreenMode: 'visible',
             idleHoverPeek: true,
             hideInFullscreen: false,
             topbarCollisionMode: 'drop-below',
@@ -194,6 +195,11 @@ export class PriorityManager extends Signals.EventEmitter {
             next.mediaIslandClock = ['none', 'left', 'right'].includes(next.mediaIslandClock)
                 ? next.mediaIslandClock
                 : 'none';
+        }
+        if (next.idleHandleFullscreenMode !== undefined) {
+            next.idleHandleFullscreenMode = next.idleHandleFullscreenMode === 'hover-only'
+                ? 'hover-only'
+                : 'visible';
         }
         if (next.notificationDismissOnLeave !== undefined)
             next.notificationDismissOnLeave = Boolean(next.notificationDismissOnLeave);
@@ -320,6 +326,11 @@ export class PriorityManager extends Signals.EventEmitter {
             const preset = this._options.mergedPillPreset;
             const structuralHover = (preset === 'minimal-clock' || preset === 'handle-clock') && this._options.idleHoverPeek;
             this._reconcile(!structuralHover);
+        } else if (this._currentModel.state === IslandState.IDLE_BAR &&
+            this._environment.inFullscreen &&
+            this._options.idleHandleFullscreenMode === 'hover-only' &&
+            !this._options.idleHoverPeek) {
+            this._reconcile(true);
         }
 
         if (!this._transient || this._transient.sticky)
@@ -638,6 +649,10 @@ export class PriorityManager extends Signals.EventEmitter {
             return {
                 state: IslandState.IDLE_BAR,
                 primary: 'idle-bar',
+                inFullscreen: Boolean(inFullscreen),
+                idleHandleFullscreenMode: this._options.idleHandleFullscreenMode,
+                idleHoverPeek: Boolean(idleHoverPeek),
+                hovered: Boolean(this._hovered),
                 persistent: this._persistent,
                 meta: currentMeta,
             };
@@ -677,6 +692,7 @@ export class PriorityManager extends Signals.EventEmitter {
             prev.state === next.state &&
             prev.primary === next.primary &&
             prev.preset === next.preset &&
+            prev.idleHandleFullscreenMode === next.idleHandleFullscreenMode &&
             !hoverStructDiff &&
             prev.left === next.left &&
             prev.right === next.right &&

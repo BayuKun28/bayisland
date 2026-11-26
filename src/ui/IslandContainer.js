@@ -60,6 +60,7 @@ export class IslandContainer {
         this._topMargin = 6;
         this._expandedTopMargin = 6;
         this._idleHoverDwellMs = 160;
+        this._idleHandleFullscreenMode = 'visible';
         this._monitorMode = 'primary';
         this._commandRunnerEnabled = true;
         this._palette = null;
@@ -602,8 +603,8 @@ export class IslandContainer {
 
         if (model.state === IslandState.EXPANDED_MODAL && event.type() === Clutter.EventType.KEY_PRESS) {
             const mods = event.get_state?.() ?? 0;
+            const sym = event.get_key_symbol();
             if ((mods & Clutter.ModifierType.CONTROL_MASK) !== 0) {
-                const sym = event.get_key_symbol();
                 const order = this._priority.getTabOrder?.() ?? ['home', 'media', 'power', 'clipboard', 'shelf'];
                 const numIdx = [Clutter.KEY_1, Clutter.KEY_2, Clutter.KEY_3, Clutter.KEY_4, Clutter.KEY_5].indexOf(sym);
                 if (numIdx !== -1 && order[numIdx]) {
@@ -616,6 +617,17 @@ export class IslandContainer {
                     const nextIdx = (curIdx + (shift ? -1 : 1) + order.length) % order.length;
                     this._priority.setExpandedTab(order[nextIdx]);
                     return Clutter.EVENT_STOP;
+                }
+            }
+            if (model.tab === 'clipboard' && !this._expandedView?.isRunnerFocused?.()) {
+                if (sym === Clutter.KEY_Up || sym === Clutter.KEY_Down ||
+                    sym === Clutter.KEY_Return || sym === Clutter.KEY_KP_Enter) {
+                    if (this._expandedView?.handleClipboardKeyPress?.(sym))
+                        return Clutter.EVENT_STOP;
+                }
+                if (sym === Clutter.KEY_slash && !this._expandedView?.isClipboardSearchFocused?.()) {
+                    if (this._expandedView?.focusClipboardSearch?.())
+                        return Clutter.EVENT_STOP;
                 }
             }
         }
@@ -798,6 +810,13 @@ export class IslandContainer {
         this._expandedView?.setCommandRunnerEnabled(this._commandRunnerEnabled);
     }
 
+    setHomeBrightnessEnabled(enabled) {
+        const changed = this._expandedView?.setHomeBrightnessEnabled?.(enabled);
+        const model = this._priority?.getModel();
+        if (changed && model?.state === IslandState.EXPANDED_MODAL && model?.tab === 'home')
+            this._repositionCurrent();
+    }
+
     openQuickRunner() {
         if (!this._commandRunnerEnabled) {
             this._priority?.toggleExpand();
@@ -862,6 +881,7 @@ export class IslandContainer {
         topMargin,
         expandedTopMargin,
         idleHoverDwellMs,
+        idleHandleFullscreenMode,
         monitorMode,
     }) {
         if (this._destroying || !this._shell)
@@ -880,6 +900,8 @@ export class IslandContainer {
             this._expandedTopMargin = expandedTopMargin;
         if (idleHoverDwellMs !== undefined)
             this._idleHoverDwellMs = Math.max(50, Math.min(600, Math.round(idleHoverDwellMs)));
+        if (idleHandleFullscreenMode !== undefined)
+            this._idleHandleFullscreenMode = idleHandleFullscreenMode === 'hover-only' ? 'hover-only' : 'visible';
         if (monitorMode !== undefined)
             this._monitorMode = monitorMode === 'active' ? 'active' : 'primary';
 
@@ -986,7 +1008,8 @@ export class IslandContainer {
 
     _isPanelVisiblyBlockingTop() {
         const monitor = Main.layoutManager.primaryMonitor;
-        if (monitor?.inFullscreen)
+        const target = this._getTargetMonitor();
+        if (monitor?.inFullscreen || target?.inFullscreen)
             return false;
         if (this._topBar)
             return this._topBar.isPanelVisiblyShowing();
@@ -1240,6 +1263,7 @@ export class IslandContainer {
 
         if (this._morph.isVisible() && this._shell && !this._shell.visible)
             this._shell.show();
+        this._setUnredirectDisabled(this._needsUnredirectBlock(model));
 
         const bridgeRect = this._wantsBridgePassthrough(model)
             ? this._computeBridgeRect(model, coords.x, coords.y, width, height)
@@ -1482,6 +1506,19 @@ export class IslandContainer {
         }
     }
 
+    _needsUnredirectBlock(model) {
+        if (!model || model.state === IslandState.HIDDEN || model.state === IslandState.INTEGRATED_CLOCK)
+            return false;
+        if (model.state === IslandState.IDLE_BAR) {
+            const inFs = Boolean(model.inFullscreen ?? this._getTargetMonitor()?.inFullscreen);
+            const unread = model.meta?.unreadNotifs ?? 0;
+            const hoverOnly = this._idleHandleFullscreenMode === 'hover-only';
+            if (inFs && hoverOnly && unread === 0 && !(this._shell?.hover && !model.idleHoverPeek))
+                return false;
+        }
+        return true;
+    }
+
     _setUnredirectDisabled(disabled) {
         const want = Boolean(disabled);
         if (want === this._unredirectDisabled)
@@ -1569,10 +1606,15 @@ export class IslandContainer {
                 return;
             }
 
-            // Disable unredirect only for active overlays/modals so idle states preserve fullscreen scanout
-            const needsUnredirectBlock =
-                model.state !== IslandState.IDLE_BAR &&
-                model.state !== IslandState.INTEGRATED_CLOCK;
+            const isTwoPhaseCollapse =
+                model.state === IslandState.IDLE_BAR &&
+                this._isDarkVisibleState(prevState) &&
+                this._morph.isVisible() &&
+                this._shell.visible &&
+                !inPlaceOnly;
+
+            // Keep compositing alive during collapse animation; update unredirect once settled if hover-only
+            const needsUnredirectBlock = isTwoPhaseCollapse || this._needsUnredirectBlock(model);
             this._setUnredirectDisabled(needsUnredirectBlock);
             this._ensureShellTopOrder();
             this._syncIdleHitboxMetrics(model);
@@ -1582,11 +1624,7 @@ export class IslandContainer {
             this._topBar?.setPanelHold(holdPanel);
 
             // Smooth two-phase collapse when returning from any dark surface -> IDLE_BAR
-            if (model.state === IslandState.IDLE_BAR &&
-                this._isDarkVisibleState(prevState) &&
-                this._morph.isVisible() &&
-                this._shell.visible &&
-                !inPlaceOnly) {
+            if (isTwoPhaseCollapse) {
                 this._deferredExpandedCleanup = prevState === IslandState.EXPANDED_MODAL;
 
                 const idleSize = this._getTargetSize(model);
@@ -1642,8 +1680,10 @@ export class IslandContainer {
                         this._ensureShellTopOrder();
                     },
                     onComplete: () => {
-                        if (!this._destroying && this._shell)
+                        if (!this._destroying && this._shell) {
                             this._repositionCurrent();
+                            this._setUnredirectDisabled(this._needsUnredirectBlock(this._priority.getModel()));
+                        }
                     },
                 });
                 return;

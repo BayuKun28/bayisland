@@ -340,6 +340,7 @@ export default class BayIslandExtension extends Extension {
         const hideInFullscreen = s.get_boolean('hide-in-fullscreen');
         const showIdlePill = s.get_boolean('show-idle-pill');
         const idleHandleEnabled = s.get_boolean('idle-handle-enabled');
+        const idleHandleFullscreenMode = s.get_string('idle-handle-fullscreen-mode');
         const idleHoverPeek = s.get_boolean('idle-hover-peek');
         const idleHoverDwellMs = s.get_int('idle-hover-dwell-ms');
         const expandedDefaultTab = s.get_string('expanded-default-tab');
@@ -354,11 +355,13 @@ export default class BayIslandExtension extends Extension {
             topMargin,
             expandedTopMargin,
             idleHoverDwellMs,
+            idleHandleFullscreenMode,
             monitorMode: s.get_string('monitor-mode'),
         });
         this._priority.setOptions({
             showIdlePill,
             idleHandleEnabled,
+            idleHandleFullscreenMode,
             idleHoverPeek,
             hideInFullscreen,
             topbarCollisionMode: collisionMode,
@@ -397,6 +400,7 @@ export default class BayIslandExtension extends Extension {
 
         this._quickActions.setEnabled(s.get_boolean('enable-quick-actions'));
         this._quickActions.setAccessoryAlertsEnabled(s.get_boolean('enable-audio-accessory-alert'));
+        this._island?.setHomeBrightnessEnabled(s.get_boolean('enable-home-brightness-slider'));
 
         this._clipboard.setOptions({
             autoPaste: s.get_boolean('clipboard-auto-paste'),

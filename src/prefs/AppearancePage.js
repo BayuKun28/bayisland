@@ -12,6 +12,7 @@ import {
     AUTOHIDE_HOVER_MODES,
     COLLISION_MODES,
     MONITOR_MODES,
+    FULLSCREEN_IDLE_MODES,
     DEFAULT_TABS,
     DEFAULT_TAB_ORDER,
     TAB_ORDER_INFO,
@@ -494,6 +495,12 @@ export function buildAppearancePage(settings, window, cleanups, shellSettings) {
         'Show Idle Grab Handle Bar',
         'Pastel-blue top-center line that stays visible even when HideTopBar hides the Top Bar over maximized/fullscreen apps.'
     ));
+    const fullscreenIdleRow = new Adw.ComboRow({
+        title: 'Fullscreen Pill Line Behavior',
+        subtitle: 'Keep the pill line visible in fullscreen, or hide it when no notifications remain and reveal on hover.',
+    });
+    bindCombo(settings, 'idle-handle-fullscreen-mode', FULLSCREEN_IDLE_MODES, fullscreenIdleRow, cleanups);
+    idleGroup.add(fullscreenIdleRow);
     idleGroup.add(bindSwitch(
         settings,
         'idle-hover-peek',
@@ -519,6 +526,19 @@ export function buildAppearancePage(settings, window, cleanups, shellSettings) {
         'Hide Completely in Fullscreen',
         'Keep BayIsland hidden during fullscreen apps/videos (disable to still show OSD alerts).'
     ));
+
+    const syncIdleSensitivity = () => {
+        const handleOn = settings.get_boolean('idle-handle-enabled');
+        const hideFs = settings.get_boolean('hide-in-fullscreen');
+        fullscreenIdleRow.sensitive = handleOn && !hideFs;
+    };
+    syncIdleSensitivity();
+    const sigHandle = settings.connect('changed::idle-handle-enabled', syncIdleSensitivity);
+    const sigHideFs = settings.connect('changed::hide-in-fullscreen', syncIdleSensitivity);
+    cleanups.push(() => {
+        settings.disconnect(sigHandle);
+        settings.disconnect(sigHideFs);
+    });
     page.add(idleGroup);
 
     return page;

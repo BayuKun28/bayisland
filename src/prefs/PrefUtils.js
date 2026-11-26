@@ -42,6 +42,11 @@ export const MONITOR_MODES = [
     { value: 'active', label: 'Active Monitor (Follow Focus in Separate Mode)' },
 ];
 
+export const FULLSCREEN_IDLE_MODES = [
+    { value: 'visible', label: 'Keep Pill Line Visible (Default)' },
+    { value: 'hover-only', label: 'Hide When Clear (Show if Unread Notifs / Hover)' },
+];
+
 export const DEFAULT_TABS = [
     { value: 'auto', label: 'Smart Auto (Media if Playing, else Home)' },
     { value: 'home', label: 'Home (Clock, Calendar, Quick Actions, Notifications)' },

@@ -48,6 +48,7 @@ export class TopBarAutohide {
         this._overlapTimeoutId = 0;
         this._overlapNeedsRecheck = false;
         this._extReconcileTimerId = 0;
+        this._inShowPanel = false;
         this._inHidePanel = false;
         this._pointerWatchId = 0;
         this._blockerMenu = null;
@@ -250,12 +251,42 @@ export class TopBarAutohide {
                 this._syncOverviewSearchPadding();
                 this._reconcileAutohideVisibility('overview-showing');
             }),
+            this._signals.connect(Main.overview, 'shown', () => {
+                this._syncOverviewSearchPadding();
+            }),
             this._signals.connect(Main.overview, 'hiding', () => {
                 this._syncOverviewSearchPadding();
                 this._reconcileAutohideVisibility('overview-hiding');
             }),
+            this._signals.connect(Main.overview, 'hidden', () => {
+                this._syncOverviewSearchPadding();
+                this._scheduleOverlapCheck();
+                this._reconcileAutohideVisibility('overview-hidden');
+            }),
             this._signals.connect(panelBox, 'enter-event', () => this._reconcileAutohideVisibility('panel-enter')),
             this._signals.connect(panelBox, 'leave-event', () => this._handleMenusOrPointerLeave()),
+            this._signals.connect(panelBox, 'notify::visible', () => {
+                if (!this._autohideActive || this._inShowPanel || this._inHidePanel || this._panelVisibleAnim)
+                    return;
+                if (this._panelHidden && panelBox.visible && !this._extReconcileTimerId) {
+                    this._extReconcileTimerId = this._timers.setTimeout(30, () => {
+                        this._extReconcileTimerId = 0;
+                        if (this._autohideActive && this._panelHidden && panelBox.visible)
+                            this._reconcileAutohideVisibility('external-panel-show');
+                    });
+                }
+            }),
+            this._signals.connect(global.window_manager, 'map', (_wm, wa) => {
+                if (wa)
+                    this._watchWindowActor(wa);
+                this._scheduleOverlapCheck();
+            }),
+            this._signals.connect(global.window_manager, 'minimize', () => this._scheduleOverlapCheck()),
+            this._signals.connect(global.window_manager, 'unminimize', () => this._scheduleOverlapCheck()),
+            this._signals.connect(global.window_manager, 'size-changed', () => this._scheduleOverlapCheck()),
+            this._signals.connect(global.display, 'window-entered-monitor', () => this._scheduleOverlapCheck()),
+            this._signals.connect(global.display, 'window-left-monitor', () => this._scheduleOverlapCheck()),
+            this._signals.connect(global.display, 'workareas-changed', () => this._scheduleOverlapCheck()),
             this._signals.connect(Main.layoutManager, 'monitors-changed', () => {
                 this._baseY = (Main.layoutManager.primaryMonitor ?? { y: 0 }).y;
                 this._syncPressureBarrier();
@@ -269,9 +300,11 @@ export class TopBarAutohide {
             this._autohideSigIds.push(
                 this._signals.connect(winGroup, 'child-added', (_c, actor) => this._watchWindowActor(actor)),
                 this._signals.connect(winGroup, 'child-removed', (_c, actor) => {
-                    const sid = this._windowActors.get(actor);
-                    if (sid) {
-                        try { actor.disconnect(sid); } catch {}
+                    const entries = this._windowActors.get(actor);
+                    if (entries) {
+                        for (const [obj, sid] of entries) {
+                            try { obj.disconnect(sid); } catch {}
+                        }
                         this._windowActors.delete(actor);
                     }
                     this._scheduleOverlapCheck();
@@ -302,8 +335,10 @@ export class TopBarAutohide {
 
         this._disablePressureBarrier();
 
-        for (const [actor, sid] of this._windowActors.entries()) {
-            try { actor.disconnect(sid); } catch {}
+        for (const entries of this._windowActors.values()) {
+            for (const [obj, sid] of entries) {
+                try { obj.disconnect(sid); } catch {}
+            }
         }
         this._windowActors.clear();
 
@@ -339,8 +374,26 @@ export class TopBarAutohide {
     _watchWindowActor(wa) {
         if (!wa || this._windowActors.has(wa))
             return;
-        const sid = wa.connect('notify::allocation', () => this._scheduleOverlapCheck());
-        this._windowActors.set(wa, sid);
+        const entries = [];
+        const addSig = (obj, sig) => {
+            if (!obj || typeof obj.connect !== 'function')
+                return;
+            try {
+                entries.push([obj, obj.connect(sig, () => this._scheduleOverlapCheck())]);
+            } catch {
+                // Unsupported signal
+            }
+        };
+        addSig(wa, 'notify::allocation');
+        addSig(wa, 'notify::visible');
+        const mw = wa.get_meta_window?.();
+        if (mw && HANDLED_WINDOW_TYPES.has(mw.get_window_type?.())) {
+            addSig(mw, 'notify::fullscreen');
+            addSig(mw, 'notify::minimized');
+            addSig(mw, 'size-changed');
+            addSig(mw, 'position-changed');
+        }
+        this._windowActors.set(wa, entries);
     }
 
     _scheduleOverlapCheck() {
@@ -425,12 +478,25 @@ export class TopBarAutohide {
         if (!panelBox)
             return;
 
-        const inOverview = Main.overview?.visible;
+        const inOverview = Boolean(
+            Main.overview?.visibleTarget !== undefined
+                ? Main.overview.visibleTarget
+                : Main.overview?.visible
+        );
         if (inOverview) {
             if (this._showInOverview)
                 this._showPanel(this._animMs, 'overview');
             else
                 this._hidePanel(this._animMs, 'overview-hidden');
+            return;
+        }
+
+        const monitor = Main.layoutManager.primaryMonitor;
+        if (monitor?.inFullscreen) {
+            this._revealHoldUntilLeave = false;
+            this._stopWatchingPointer();
+            this._releaseBlockerMenu();
+            this._hidePanel(0, 'fullscreen');
             return;
         }
 
@@ -440,8 +506,12 @@ export class TopBarAutohide {
         }
 
         if (this._revealHoldUntilLeave) {
-            this._showPanel(this._animMs, 'reveal-hold');
-            return;
+            const [px, py] = global.get_pointer();
+            if (this._panelVisibleAnim || this._isPointerInPanel(px, py) || this._getActivePanelMenu()) {
+                this._showPanel(this._animMs, 'reveal-hold');
+                return;
+            }
+            this._revealHoldUntilLeave = false;
         }
 
         if (this._getActivePanelMenu() || this._panelGrabMenu()) {
@@ -456,7 +526,7 @@ export class TopBarAutohide {
             return;
         }
 
-        if (this._autohideMode === 'autohide') {
+        if (this._autohideMode === 'always' || this._autohideMode === 'autohide') {
             this._hidePanel(this._animMs, 'autohide-always');
             return;
         }
@@ -529,7 +599,7 @@ export class TopBarAutohide {
     _isPointerInPanel(px, py) {
         const monitor = Main.layoutManager.primaryMonitor;
         const panelBox = Main.layoutManager.panelBox;
-        if (!monitor || !panelBox)
+        if (!monitor || !panelBox || this._panelHidden || !panelBox.visible)
             return false;
 
         const panelY = panelBox.y + (panelBox.translation_y ?? 0);
@@ -586,6 +656,8 @@ export class TopBarAutohide {
         );
 
         this._pressureTriggerSigId = this._pressureBarrier.connect('trigger', () => {
+            if (Main.layoutManager.primaryMonitor?.inFullscreen)
+                return;
             this._revealHoldUntilLeave = true;
             this._showPanel(this._animMs, 'pressure-barrier');
             this._startWatchingPointer();
@@ -667,36 +739,48 @@ export class TopBarAutohide {
 
     _showPanel(animMs, trigger) {
         const panelBox = Main.layoutManager.panelBox;
-        if (!panelBox)
+        if (!panelBox || this._inShowPanel)
+            return;
+        const inOverview = Boolean(
+            Main.overview?.visibleTarget !== undefined
+                ? Main.overview.visibleTarget
+                : Main.overview?.visible
+        );
+        if (Main.layoutManager.primaryMonitor?.inFullscreen && !inOverview)
             return;
 
-        panelBox.remove_all_transitions();
-        const targetY = this._baseY;
-        this._panelHidden = false;
-        panelBox.show();
+        this._inShowPanel = true;
+        try {
+            panelBox.remove_all_transitions();
+            const targetY = this._baseY;
+            this._panelHidden = false;
+            panelBox.show();
 
-        if (animMs <= 0 || Math.abs((panelBox.y ?? 0) - targetY) <= 0.5) {
-            this._panelVisibleAnim = false;
-            panelBox.y = targetY;
-            this._setUnredirectDisabled(false);
-            this._emitPanelState();
-            return;
-        }
-
-        this._setUnredirectDisabled(true);
-        this._panelVisibleAnim = true;
-        panelBox.ease({
-            y: targetY,
-            duration: animMs,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            onComplete: () => {
+            if (animMs <= 0 || Math.abs((panelBox.y ?? 0) - targetY) <= 0.5) {
                 this._panelVisibleAnim = false;
                 panelBox.y = targetY;
                 this._setUnredirectDisabled(false);
                 this._emitPanelState();
-            },
-        });
-        this._emitPanelState();
+                return;
+            }
+
+            this._setUnredirectDisabled(true);
+            this._panelVisibleAnim = true;
+            panelBox.ease({
+                y: targetY,
+                duration: animMs,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                onComplete: () => {
+                    this._panelVisibleAnim = false;
+                    panelBox.y = targetY;
+                    this._setUnredirectDisabled(false);
+                    this._emitPanelState();
+                },
+            });
+            this._emitPanelState();
+        } finally {
+            this._inShowPanel = false;
+        }
     }
 
     _hidePanel(animMs, _trigger) {
